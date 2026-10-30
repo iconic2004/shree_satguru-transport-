@@ -1,0 +1,128 @@
+'use client'
+
+import { useState } from 'react'
+import { PageHeader } from '@/components/shared/page-header'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Bell, Check, AlertTriangle, Truck, Package, ShieldAlert, CheckCircle2 } from 'lucide-react'
+import { toast } from '@/lib/hooks/use-toast'
+
+export default function NotificationsPage() {
+  const [notifications, setNotifications] = useState([
+    {
+      id: '1',
+      title: 'Vehicle Fitness Certificate Expiring Soon',
+      message: 'Fitness certificate for MH-43-BP-8890 expires in 37 days on 05-Dec-2026. Schedule RTO inspection.',
+      type: 'warning',
+      is_read: false,
+      time: '10 mins ago',
+    },
+    {
+      id: '2',
+      title: 'New Goods Consignment Inward',
+      message: 'Challan CH-5543 from Asian Paints (120 buckets) arrived at Vashi Godown. Awaiting physical verification.',
+      type: 'dispatch',
+      is_read: false,
+      time: '1 hour ago',
+    },
+    {
+      id: '3',
+      title: 'Failed Delivery Stop Alert',
+      message: 'Driver Santosh Patil marked delivery at Apex Paints Pune as Failed (Gate closed). Redelivery pending.',
+      type: 'error',
+      is_read: false,
+      time: '3 hours ago',
+    },
+    {
+      id: '4',
+      title: 'Customer Payment Remitted',
+      message: '₹49,560 received via RTGS from Godrej Consumer Products and cleared against SST-INV-2026-102.',
+      type: 'success',
+      is_read: true,
+      time: 'Yesterday',
+    },
+  ])
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    toast({
+      title: 'All Caught Up',
+      description: 'Marked all operational alerts as read.',
+      variant: 'success',
+    })
+  }
+
+  const markSingleRead = (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Notifications & Operational Alerts"
+        description="Real-time alerts for incoming godown goods, trip dispatch events, failed stops and document renewal notices"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs"
+            onClick={markAllRead}
+          >
+            <Check className="w-3.5 h-3.5 mr-1.5" />
+            Mark All as Read
+          </Button>
+        }
+      />
+
+      <Card className="border-gray-200/80 shadow-sm divide-y divide-gray-100 overflow-hidden">
+        {notifications.map((item) => (
+          <div
+            key={item.id}
+            className={`p-4 flex items-start gap-3.5 transition-colors ${
+              item.is_read ? 'bg-white' : 'bg-orange-50/20'
+            }`}
+          >
+            <div
+              className={`p-2 rounded-xl mt-0.5 flex-shrink-0 ${
+                item.type === 'warning'
+                  ? 'bg-amber-100 text-amber-800'
+                  : item.type === 'error'
+                  ? 'bg-rose-100 text-rose-800'
+                  : item.type === 'success'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-navy-100 text-navy-800'
+              }`}
+            >
+              {item.type === 'warning' ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : item.type === 'error' ? (
+                <ShieldAlert className="w-4 h-4" />
+              ) : item.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <Truck className="w-4 h-4" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs font-bold text-navy-950">{item.title}</p>
+                <span className="text-[10px] text-gray-400 font-medium flex-shrink-0">{item.time}</span>
+              </div>
+              <p className="text-xs text-gray-600 font-normal leading-relaxed">{item.message}</p>
+            </div>
+            {!item.is_read && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-navy-700 hover:bg-navy-50 flex-shrink-0"
+                onClick={() => markSingleRead(item.id)}
+              >
+                Mark Read
+              </Button>
+            )}
+          </div>
+        ))}
+      </Card>
+    </div>
+  )
+}
