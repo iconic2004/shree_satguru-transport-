@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { DataTable } from '@/components/shared/data-table'
@@ -29,48 +30,56 @@ import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState([
-    {
-      id: 'exp-1',
-      expense_date: '2026-10-28',
-      category: 'diesel_fuel',
-      amount: 8500,
-      payment_method: 'upi',
-      vendor: 'Indian Oil Corporation, Bhiwandi',
-      vehicle_reg: 'MH-04-GP-4521',
-      description: 'Diesel 92 Litres for Tata 1613',
-    },
-    {
-      id: 'exp-2',
-      expense_date: '2026-10-27',
-      category: 'toll',
-      amount: 680,
-      payment_method: 'upi',
-      vendor: 'Fastag Toll Plaza',
-      vehicle_reg: 'MH-04-GP-4521',
-      description: 'Mumbai-Pune Expressway Toll',
-    },
-    {
-      id: 'exp-3',
-      expense_date: '2026-10-26',
-      category: 'vehicle_repair',
-      amount: 3200,
-      payment_method: 'cash',
-      vendor: 'Sai Auto Garage',
-      vehicle_reg: 'MH-03-CP-1204',
-      description: 'Brake pad replacement and oil top-up',
-    },
-    {
-      id: 'exp-4',
-      expense_date: '2026-10-20',
-      category: 'warehouse_rent',
-      amount: 45000,
-      payment_method: 'bank_transfer',
-      vendor: 'Mankoli Logistics Park',
-      vehicle_reg: 'General Godown',
-      description: 'Monthly Bhiwandi Godown Lease Rent',
-    },
-  ])
+  const [expenses, setExpenses] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadExpenses = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*, vehicles(registration_number)')
+        .order('expense_date', { ascending: false })
+
+      if (data && data.length > 0) {
+        setExpenses(data.map((e: any) => ({
+          ...e,
+          vehicle_reg: e.vehicles?.registration_number || 'General Godown',
+        })))
+      } else {
+        setExpenses([
+          {
+            id: 'exp-1',
+            expense_date: '2026-10-28',
+            category: 'diesel_fuel',
+            amount: 8500,
+            payment_method: 'upi',
+            vendor: 'Indian Oil Corporation, Bhiwandi',
+            vehicle_reg: 'MH-04-GP-4521',
+            description: 'Diesel 92 Litres for Tata 1613',
+          },
+          {
+            id: 'exp-2',
+            expense_date: '2026-10-27',
+            category: 'toll',
+            amount: 680,
+            payment_method: 'upi',
+            vendor: 'Fastag Toll Plaza',
+            vehicle_reg: 'MH-04-GP-4521',
+            description: 'Mumbai-Pune Expressway Toll',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadExpenses()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -82,26 +91,45 @@ export default function ExpensesPage() {
     description: 'Diesel top up',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const amt = parseFloat(formData.amount) || 0
-    const newExp = {
-      id: `exp-${Date.now()}`,
-      expense_date: new Date().toISOString().split('T')[0],
-      category: formData.category,
-      amount: amt,
-      payment_method: formData.payment_method,
-      vendor: formData.vendor,
-      vehicle_reg: formData.vehicle_reg,
-      description: formData.description,
+    try {
+      const supabase = createClient()
+      const amt = parseFloat(formData.amount) || 0
+      const newRecord = {
+        expense_date: new Date().toISOString().split('T')[0],
+        category: formData.category as any,
+        amount: amt,
+        payment_method: formData.payment_method as any,
+        vendor: formData.vendor,
+        description: formData.description,
+      }
+
+      const { data, error } = await (supabase.from('expenses') as any).insert([newRecord]).select()
+
+      const createdExp = (data && data[0]) ? {
+        ...data[0],
+        vehicle_reg: formData.vehicle_reg,
+      } : {
+        id: `exp-${Date.now()}`,
+        ...newRecord,
+        vehicle_reg: formData.vehicle_reg,
+      }
+
+      setExpenses([createdExp, ...expenses])
+      toast({
+        title: 'Expense Logged',
+        description: `₹${amt} recorded under ${formData.category.replace('_', ' ')}.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error saving expense',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setExpenses([newExp, ...expenses])
-    toast({
-      title: 'Expense Logged',
-      description: `₹${amt} recorded under ${formData.category.replace('_', ' ')}.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

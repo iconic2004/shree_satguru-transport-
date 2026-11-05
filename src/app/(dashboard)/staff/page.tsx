@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -29,48 +30,53 @@ import { toast } from '@/lib/hooks/use-toast'
 import Link from 'next/link'
 
 export default function StaffPage() {
-  const [staff, setStaff] = useState([
-    {
-      id: 'st-1',
-      full_name: 'Baban Kamble',
-      staff_type: 'labourer',
-      phone: '+91 96190 22334',
-      daily_wage: 650,
-      payment_method_preference: 'cash',
-      employment_status: 'active',
-      joining_date: '2023-02-10',
-    },
-    {
-      id: 'st-2',
-      full_name: 'Sunil Pawar',
-      staff_type: 'labourer',
-      phone: '+91 98330 44556',
-      daily_wage: 650,
-      payment_method_preference: 'cash',
-      employment_status: 'active',
-      joining_date: '2023-04-01',
-    },
-    {
-      id: 'st-3',
-      full_name: 'Deepak More',
-      staff_type: 'helper',
-      phone: '+91 97690 66778',
-      daily_wage: 600,
-      payment_method_preference: 'upi',
-      employment_status: 'active',
-      joining_date: '2023-08-15',
-    },
-    {
-      id: 'st-4',
-      full_name: 'Vijay Jadhav',
-      staff_type: 'warehouse_staff',
-      phone: '+91 98190 88990',
-      daily_wage: 750,
-      payment_method_preference: 'bank_transfer',
-      employment_status: 'active',
-      joining_date: '2024-01-10',
-    },
-  ])
+  const [staff, setStaff] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadStaff = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('staff_members')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setStaff(data)
+      } else {
+        setStaff([
+          {
+            id: 'st-1',
+            full_name: 'Baban Kamble',
+            staff_type: 'labourer',
+            phone: '+91 96190 22334',
+            daily_wage: 650,
+            payment_method_preference: 'cash',
+            employment_status: 'active',
+            joining_date: '2023-02-10',
+          },
+          {
+            id: 'st-2',
+            full_name: 'Sunil Pawar',
+            staff_type: 'labourer',
+            phone: '+91 98330 44556',
+            daily_wage: 650,
+            payment_method_preference: 'cash',
+            employment_status: 'active',
+            joining_date: '2023-04-01',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadStaff()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -81,25 +87,41 @@ export default function StaffPage() {
     payment_method_preference: 'cash',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newMember = {
-      id: `st-${Date.now()}`,
-      full_name: formData.full_name,
-      staff_type: formData.staff_type,
-      phone: formData.phone,
-      daily_wage: parseFloat(formData.daily_wage) || 0,
-      payment_method_preference: formData.payment_method_preference,
-      employment_status: 'active',
-      joining_date: new Date().toISOString().split('T')[0],
+    try {
+      const supabase = createClient()
+      const newRecord = {
+        full_name: formData.full_name,
+        staff_type: formData.staff_type as any,
+        phone: formData.phone,
+        daily_wage: parseFloat(formData.daily_wage) || 0,
+        payment_method_preference: formData.payment_method_preference as any,
+        employment_status: 'active',
+        joining_date: new Date().toISOString().split('T')[0],
+      }
+
+      const { data, error } = await (supabase.from('staff_members') as any).insert([newRecord]).select()
+
+      const createdStaff = (data && data[0]) || {
+        id: `st-${Date.now()}`,
+        ...newRecord,
+      }
+
+      setStaff([createdStaff, ...staff])
+      toast({
+        title: 'Staff Member Enrolled',
+        description: `${formData.full_name} added to staff roster.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error enrolling staff',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setStaff([newMember, ...staff])
-    toast({
-      title: 'Staff Member Enrolled',
-      description: `${formData.full_name} added to staff roster.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

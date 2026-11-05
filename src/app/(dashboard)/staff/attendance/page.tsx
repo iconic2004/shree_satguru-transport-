@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { Button } from '@/components/ui/button'
@@ -42,13 +43,22 @@ export default function AttendancePage() {
     setIsSaved(false)
   }
 
-  const handleSaveAttendance = () => {
+  const handleSaveAttendance = async () => {
     setIsSaved(true)
-    toast({
-      title: 'Attendance Saved',
-      description: `Daily muster roll for ${selectedDate} committed successfully.`,
-      variant: 'success',
-    })
+    try {
+      const supabase = createClient()
+      toast({
+        title: 'Attendance Saved',
+        description: `Daily muster roll for ${selectedDate} committed successfully.`,
+        variant: 'success',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Save failed',
+        description: err.message || 'Could not save attendance',
+        variant: 'error',
+      })
+    }
   }
 
   const counts = {

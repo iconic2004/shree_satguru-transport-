@@ -35,7 +35,7 @@ export default function LoginPage() {
             description: 'Logged in successfully.',
             variant: 'success',
           })
-          router.push('/dashboard')
+          window.location.href = '/dashboard'
           return
         }
         throw error
@@ -46,8 +46,7 @@ export default function LoginPage() {
         description: 'Welcome back to Shree Satguru Transport.',
         variant: 'success',
       })
-      router.push('/dashboard')
-      router.refresh()
+      window.location.href = '/dashboard'
     } catch (err: any) {
       toast({
         title: 'Authentication Error',

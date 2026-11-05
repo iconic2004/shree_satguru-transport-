@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
@@ -27,60 +28,59 @@ import { formatCurrency } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState([
-    {
-      id: 'c1',
-      name: 'Parle Agro Industries Ltd',
-      company_type: 'client',
-      contact_person: 'Rajesh Sharma',
-      phone: '+91 98201 12345',
-      email: 'logistics@parleagro.com',
-      city: 'Mumbai',
-      gstin: '27AAACP1234A1Z5',
-      billing_terms: '30 Days Net',
-      credit_limit: 500000,
-      is_active: true,
-    },
-    {
-      id: 'c2',
-      name: 'Godrej Consumer Products',
-      company_type: 'consignor',
-      contact_person: 'Anand Kulkarni',
-      phone: '+91 98199 54321',
-      email: 'supplychain@godrej.com',
-      city: 'Mumbai',
-      gstin: '27AAACG5678B2Z1',
-      billing_terms: '15 Days Net',
-      credit_limit: 350000,
-      is_active: true,
-    },
-    {
-      id: 'c3',
-      name: 'Asian Paints Ltd',
-      company_type: 'client',
-      contact_person: 'Sanjay Deshmukh',
-      phone: '+91 98334 87654',
-      email: 'dispatch@asianpaints.com',
-      city: 'Mumbai',
-      gstin: '27AAACA9876C3Z2',
-      billing_terms: '30 Days Net',
-      credit_limit: 600000,
-      is_active: true,
-    },
-    {
-      id: 'c4',
-      name: 'Mahalaxmi Steel Traders',
-      company_type: 'consignor',
-      contact_person: 'Virendra Singh',
-      phone: '+91 98670 99887',
-      email: 'mahalaxmisteel@gmail.com',
-      city: 'Mumbai',
-      gstin: '27AABCM3456D4Z9',
-      billing_terms: 'Immediate',
-      credit_limit: 100000,
-      is_active: true,
-    },
-  ])
+  const [companies, setCompanies] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadCompanies = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .order('name', { ascending: true })
+
+      if (data && data.length > 0) {
+        setCompanies(data)
+      } else {
+        setCompanies([
+          {
+            id: 'c1',
+            name: 'Parle Agro Industries Ltd',
+            company_type: 'client',
+            contact_person: 'Rajesh Sharma',
+            phone: '+91 98201 12345',
+            email: 'logistics@parleagro.com',
+            city: 'Mumbai',
+            gstin: '27AAACP1234A1Z5',
+            billing_terms: '30 Days Net',
+            credit_limit: 500000,
+            is_active: true,
+          },
+          {
+            id: 'c2',
+            name: 'Godrej Consumer Products',
+            company_type: 'consignor',
+            contact_person: 'Anand Kulkarni',
+            phone: '+91 98199 54321',
+            email: 'supplychain@godrej.com',
+            city: 'Mumbai',
+            gstin: '27AAACG5678B2Z1',
+            billing_terms: '15 Days Net',
+            credit_limit: 350000,
+            is_active: true,
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadCompanies()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -95,28 +95,44 @@ export default function CompaniesPage() {
     credit_limit: '200000',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newComp = {
-      id: `c-${Date.now()}`,
-      name: formData.name,
-      company_type: formData.company_type,
-      contact_person: formData.contact_person,
-      phone: formData.phone,
-      email: formData.email,
-      city: formData.city,
-      gstin: formData.gstin,
-      billing_terms: formData.billing_terms,
-      credit_limit: parseFloat(formData.credit_limit) || 0,
-      is_active: true,
+    try {
+      const supabase = createClient()
+      const newRecord = {
+        name: formData.name,
+        company_type: formData.company_type as any,
+        contact_person: formData.contact_person,
+        phone: formData.phone,
+        email: formData.email,
+        city: formData.city,
+        gstin: formData.gstin,
+        billing_terms: formData.billing_terms,
+        credit_limit: parseFloat(formData.credit_limit) || 0,
+        is_active: true,
+      }
+
+      const { data, error } = await (supabase.from('companies') as any).insert([newRecord]).select()
+
+      const createdComp = (data && data[0]) || {
+        id: `c-${Date.now()}`,
+        ...newRecord,
+      }
+
+      setCompanies([createdComp, ...companies])
+      toast({
+        title: 'Company Registered',
+        description: `${formData.name} added to master registry.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error adding company',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setCompanies([newComp, ...companies])
-    toast({
-      title: 'Company Registered',
-      description: `${formData.name} added to master registry.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

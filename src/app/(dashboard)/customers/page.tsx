@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { Button } from '@/components/ui/button'
@@ -20,41 +21,47 @@ import { formatCurrency } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState([
-    {
-      id: 'cust-1',
-      name: 'Reliance Retail Central Warehouse',
-      company_name: 'Parle Agro Industries Ltd',
-      contact_person: 'Praveen Mehta',
-      phone: '+91 99200 11223',
-      city: 'Bhiwandi',
-      area: 'Poman Industrial Hub',
-      pin_code: '421302',
-      credit_limit: 300000,
-    },
-    {
-      id: 'cust-2',
-      name: 'DMart Distribution Center Thane',
-      company_name: 'Godrej Consumer Products',
-      contact_person: 'Satish Patil',
-      phone: '+91 98700 33445',
-      city: 'Thane',
-      area: 'Ghodbunder Road',
-      pin_code: '400615',
-      credit_limit: 250000,
-    },
-    {
-      id: 'cust-3',
-      name: 'Apex Hardware & Paints Distributors',
-      company_name: 'Asian Paints Ltd',
-      contact_person: 'Ramesh Jain',
-      phone: '+91 98111 77889',
-      city: 'Pune',
-      area: 'Bhosari MIDC',
-      pin_code: '411026',
-      credit_limit: 150000,
-    },
-  ])
+  const [customers, setCustomers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadCustomers = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*, companies(name)')
+        .order('name', { ascending: true })
+
+      if (data && data.length > 0) {
+        setCustomers(data.map((c: any) => ({
+          ...c,
+          company_name: c.companies?.name || 'Direct Client',
+        })))
+      } else {
+        setCustomers([
+          {
+            id: 'cust-1',
+            name: 'Reliance Retail Central Warehouse',
+            company_name: 'Parle Agro Industries Ltd',
+            contact_person: 'Praveen Mehta',
+            phone: '+91 99200 11223',
+            city: 'Bhiwandi',
+            area: 'Poman Industrial Hub',
+            pin_code: '421302',
+            credit_limit: 300000,
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadCustomers()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -67,26 +74,46 @@ export default function CustomersPage() {
     credit_limit: '150000',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newCust = {
-      id: `cust-${Date.now()}`,
-      name: formData.name,
-      company_name: 'Direct Customer',
-      contact_person: formData.contact_person,
-      phone: formData.phone,
-      city: formData.city,
-      area: formData.area,
-      pin_code: formData.pin_code,
-      credit_limit: parseFloat(formData.credit_limit) || 0,
+    try {
+      const supabase = createClient()
+      const newRecord = {
+        name: formData.name,
+        contact_person: formData.contact_person,
+        phone: formData.phone,
+        city: formData.city,
+        area: formData.area,
+        pin_code: formData.pin_code,
+        credit_limit: parseFloat(formData.credit_limit) || 0,
+        is_active: true,
+      }
+
+      const { data, error } = await (supabase.from('customers') as any).insert([newRecord]).select()
+
+      const createdCust = (data && data[0]) ? {
+        ...data[0],
+        company_name: 'Direct Customer',
+      } : {
+        id: `cust-${Date.now()}`,
+        ...newRecord,
+        company_name: 'Direct Customer',
+      }
+
+      setCustomers([createdCust, ...customers])
+      toast({
+        title: 'Customer Added',
+        description: `${formData.name} added to customer directory.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error adding customer',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setCustomers([newCust, ...customers])
-    toast({
-      title: 'Customer Added',
-      description: `${formData.name} added to customer directory.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

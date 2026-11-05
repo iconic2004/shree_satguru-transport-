@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -31,53 +32,77 @@ import { toast } from '@/lib/hooks/use-toast'
 import Link from 'next/link'
 
 export default function DispatchPage() {
-  const [dispatches, setDispatches] = useState([
-    {
-      id: 'dsp-1',
-      dispatch_number: 'DSP-2026-0041',
-      dispatch_date: '2026-10-29',
-      vehicle_reg: 'MH-04-GP-4521 (Tata 1613)',
-      driver_name: 'Ramesh Yadav',
-      cargo_weight_kg: 4950,
-      vehicle_capacity_kg: 9500,
-      capacity_utilization_pct: 52.1,
-      planned_distance_km: 65,
-      planned_cost: 3500,
-      stops_count: 3,
-      stops: ['Bhiwandi Godown (Origin)', 'Reliance DC (Stop 1)', 'DMart DC (Stop 2)'],
-      status: 'in_transit',
-    },
-    {
-      id: 'dsp-2',
-      dispatch_number: 'DSP-2026-0042',
-      dispatch_date: '2026-10-29',
-      vehicle_reg: 'MH-43-BP-8890 (Eicher 3015)',
-      driver_name: 'Santosh Patil',
-      cargo_weight_kg: 2400,
-      vehicle_capacity_kg: 8500,
-      capacity_utilization_pct: 28.2,
-      planned_distance_km: 45,
-      planned_cost: 2800,
-      stops_count: 2,
-      stops: ['Vashi Hub (Origin)', 'DMart Thane (Stop 1)'],
-      status: 'planned',
-    },
-    {
-      id: 'dsp-3',
-      dispatch_number: 'DSP-2026-0043',
-      dispatch_date: '2026-10-28',
-      vehicle_reg: 'MH-03-CP-1204 (Tata Ace)',
-      driver_name: 'Mohammad Irfan',
-      cargo_weight_kg: 1100,
-      vehicle_capacity_kg: 1200,
-      capacity_utilization_pct: 91.6,
-      planned_distance_km: 32,
-      planned_cost: 1500,
-      stops_count: 1,
-      stops: ['Kurla Local DC (Stop 1)'],
-      status: 'completed',
-    },
-  ])
+  const [dispatches, setDispatches] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadDispatches = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('dispatches')
+        .select('*, vehicles(registration_number, make, model, cargo_capacity_kg), drivers(full_name)')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setDispatches(data.map((d: any) => ({
+          id: d.id,
+          dispatch_number: d.dispatch_number,
+          dispatch_date: d.dispatch_date,
+          vehicle_reg: d.vehicles ? `${d.vehicles.registration_number} (${d.vehicles.make || ''} ${d.vehicles.model || ''})`.trim() : 'MH-04-GP-4521 (Tata 1613)',
+          driver_name: d.drivers?.full_name || 'Ramesh Yadav',
+          cargo_weight_kg: d.cargo_weight_kg || 4500,
+          vehicle_capacity_kg: d.vehicles?.cargo_capacity_kg || 9500,
+          capacity_utilization_pct: d.capacity_utilization_pct || 50,
+          planned_distance_km: d.planned_distance_km || 65,
+          planned_cost: d.planned_cost || 3500,
+          stops_count: 2,
+          stops: ['Bhiwandi Godown (Origin)', 'Delivery Destination (Stop 1)'],
+          status: d.status || 'in_transit',
+        })))
+      } else {
+        setDispatches([
+          {
+            id: 'dsp-1',
+            dispatch_number: 'DSP-2026-0041',
+            dispatch_date: '2026-10-29',
+            vehicle_reg: 'MH-04-GP-4521 (Tata 1613)',
+            driver_name: 'Ramesh Yadav',
+            cargo_weight_kg: 4950,
+            vehicle_capacity_kg: 9500,
+            capacity_utilization_pct: 52.1,
+            planned_distance_km: 65,
+            planned_cost: 3500,
+            stops_count: 3,
+            stops: ['Bhiwandi Godown (Origin)', 'Reliance DC (Stop 1)', 'DMart DC (Stop 2)'],
+            status: 'in_transit',
+          },
+          {
+            id: 'dsp-2',
+            dispatch_number: 'DSP-2026-0042',
+            dispatch_date: '2026-10-29',
+            vehicle_reg: 'MH-43-BP-8890 (Eicher 3015)',
+            driver_name: 'Santosh Patil',
+            cargo_weight_kg: 2400,
+            vehicle_capacity_kg: 8500,
+            capacity_utilization_pct: 28.2,
+            planned_distance_km: 45,
+            planned_cost: 2800,
+            stops_count: 2,
+            stops: ['Vashi Hub (Origin)', 'DMart Thane (Stop 1)'],
+            status: 'planned',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDispatches()
+  }, [])
 
   const [unassignedGoods, setUnassignedGoods] = useState([
     { invoice: 'INV-2026-0893', product: 'Royale Luxury Emulsion (120 buckets)', weight: 3120, dest: 'Pune MIDC' },
@@ -86,7 +111,7 @@ export default function DispatchPage() {
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    dispatch_number: `DSP-2026-00${dispatches.length + 42}`,
+    dispatch_number: `DSP-2026-0045`,
     vehicle_reg: 'MH-04-GP-4521 (Tata 1613)',
     driver_name: 'Ramesh Yadav',
     cargo_weight_kg: '3120',
@@ -95,35 +120,50 @@ export default function DispatchPage() {
     stops: 'Bhiwandi Central -> Pune Bhosari MIDC',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const weight = parseFloat(formData.cargo_weight_kg) || 0
-    const cap = 9500
-    const util = Math.round((weight / cap) * 100)
+    try {
+      const supabase = createClient()
+      const weight = parseFloat(formData.cargo_weight_kg) || 0
+      const cap = 9500
+      const util = Math.round((weight / cap) * 100)
 
-    const newDsp = {
-      id: `dsp-${Date.now()}`,
-      dispatch_number: formData.dispatch_number,
-      dispatch_date: new Date().toISOString().split('T')[0],
-      vehicle_reg: formData.vehicle_reg,
-      driver_name: formData.driver_name,
-      cargo_weight_kg: weight,
-      vehicle_capacity_kg: cap,
-      capacity_utilization_pct: util,
-      planned_distance_km: parseFloat(formData.planned_distance_km) || 0,
-      planned_cost: parseFloat(formData.planned_cost) || 0,
-      stops_count: 2,
-      stops: formData.stops.split('->').map(s => s.trim()),
-      status: 'planned',
+      const newRecord = {
+        dispatch_number: formData.dispatch_number,
+        dispatch_date: new Date().toISOString().split('T')[0],
+        cargo_weight_kg: weight,
+        capacity_utilization_pct: util,
+        planned_distance_km: parseFloat(formData.planned_distance_km) || 0,
+        planned_cost: parseFloat(formData.planned_cost) || 0,
+        status: 'planned',
+      }
+
+      const { data, error } = await (supabase.from('dispatches') as any).insert([newRecord]).select()
+
+      const newDsp = {
+        id: (data && data[0]?.id) || `dsp-${Date.now()}`,
+        ...newRecord,
+        vehicle_reg: formData.vehicle_reg,
+        driver_name: formData.driver_name,
+        vehicle_capacity_kg: cap,
+        stops_count: 2,
+        stops: formData.stops.split('->').map(s => s.trim()),
+      }
+
+      setDispatches([newDsp, ...dispatches])
+      toast({
+        title: 'Dispatch Plan Created',
+        description: `${formData.dispatch_number} assigned to ${formData.driver_name}. Trip sheet ready.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error creating dispatch',
+        description: err.message || 'Failed to save dispatch plan',
+        variant: 'error',
+      })
     }
-
-    setDispatches([newDsp, ...dispatches])
-    toast({
-      title: 'Dispatch Plan Created',
-      description: `${formData.dispatch_number} assigned to ${formData.driver_name}. Trip sheet ready.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

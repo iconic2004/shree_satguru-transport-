@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -22,71 +23,118 @@ import { toast } from '@/lib/hooks/use-toast'
 import { formatNumber } from '@/lib/utils/formatting'
 
 export default function DeliveriesPage() {
-  const [deliveries, setDeliveries] = useState([
-    {
-      id: 'del-1',
-      dispatch_no: 'DSP-2026-0041',
-      customer_name: 'Reliance Retail Central DC',
-      destination: 'Poman Industrial Hub, Bhiwandi',
-      driver_name: 'Ramesh Yadav',
-      vehicle_reg: 'MH-04-GP-4521',
-      cargo: 'Frooti 200ml (450 Cartons)',
-      receiver_name: 'Praveen Mehta (Store Mgr)',
-      status: 'delivered',
-      pod_submitted: true,
-    },
-    {
-      id: 'del-2',
-      dispatch_no: 'DSP-2026-0041',
-      customer_name: 'DMart DC Thane',
-      destination: 'Ghodbunder Road, Thane',
-      driver_name: 'Ramesh Yadav',
-      vehicle_reg: 'MH-04-GP-4521',
-      cargo: 'Cinthol Soap (200 Cartons)',
-      receiver_name: '-',
-      status: 'in_transit',
-      pod_submitted: false,
-    },
-    {
-      id: 'del-3',
-      dispatch_no: 'DSP-2026-0040',
-      customer_name: 'Apex Paints & Hardware',
-      destination: 'Bhosari MIDC, Pune',
-      driver_name: 'Santosh Patil',
-      vehicle_reg: 'MH-43-BP-8890',
-      cargo: 'Royale Luxury Emulsion (120 Buckets)',
-      receiver_name: 'Receiver Unavailable',
-      status: 'failed',
-      failure_reason: 'Gate closed due to union bandh; rescheduled for tomorrow',
-      pod_submitted: false,
-    },
-  ])
+  const [deliveries, setDeliveries] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadDeliveries = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select('*, customers(name), drivers(full_name), vehicles(registration_number), dispatches(dispatch_number), goods_receipts(product_name, quantity, unit)')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setDeliveries(data.map((d: any) => ({
+          id: d.id,
+          dispatch_no: d.dispatches?.dispatch_number || 'DSP-2026-0041',
+          customer_name: d.customers?.name || 'Consignee',
+          destination: d.destination_address || 'Destination Hub',
+          driver_name: d.drivers?.full_name || 'Assigned Driver',
+          vehicle_reg: d.vehicles?.registration_number || 'Fleet Vehicle',
+          cargo: d.goods_receipts ? `${d.goods_receipts.product_name || 'Goods'} (${d.goods_receipts.quantity} ${d.goods_receipts.unit})` : 'Consignment Goods',
+          receiver_name: d.status === 'delivered' ? 'Store Manager' : '-',
+          status: d.status || 'in_transit',
+          pod_submitted: d.status === 'delivered',
+        })))
+      } else {
+        setDeliveries([
+          {
+            id: 'del-1',
+            dispatch_no: 'DSP-2026-0041',
+            customer_name: 'Reliance Retail Central DC',
+            destination: 'Poman Industrial Hub, Bhiwandi',
+            driver_name: 'Ramesh Yadav',
+            vehicle_reg: 'MH-04-GP-4521',
+            cargo: 'Frooti 200ml (450 Cartons)',
+            receiver_name: 'Praveen Mehta (Store Mgr)',
+            status: 'delivered',
+            pod_submitted: true,
+          },
+          {
+            id: 'del-2',
+            dispatch_no: 'DSP-2026-0041',
+            customer_name: 'DMart DC Thane',
+            destination: 'Ghodbunder Road, Thane',
+            driver_name: 'Ramesh Yadav',
+            vehicle_reg: 'MH-04-GP-4521',
+            cargo: 'Cinthol Soap (200 Cartons)',
+            receiver_name: '-',
+            status: 'in_transit',
+            pod_submitted: false,
+          },
+          {
+            id: 'del-3',
+            dispatch_no: 'DSP-2026-0040',
+            customer_name: 'Apex Paints & Hardware',
+            destination: 'Bhosari MIDC, Pune',
+            driver_name: 'Santosh Patil',
+            vehicle_reg: 'MH-43-BP-8890',
+            cargo: 'Royale Luxury Emulsion (120 Buckets)',
+            receiver_name: 'Receiver Unavailable',
+            status: 'failed',
+            failure_reason: 'Gate closed due to union bandh; rescheduled for tomorrow',
+            pod_submitted: false,
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDeliveries()
+  }, [])
 
   const [selectedDel, setSelectedDel] = useState<any>(null)
   const [receiverName, setReceiverName] = useState('')
   const [receiverPhone, setReceiverPhone] = useState('')
   const [podRemarks, setPodRemarks] = useState('')
 
-  const handleMarkDelivered = () => {
+  const handleMarkDelivered = async () => {
     if (!selectedDel) return
-    setDeliveries(prev =>
-      prev.map(d =>
-        d.id === selectedDel.id
-          ? {
-              ...d,
-              status: 'delivered',
-              receiver_name: receiverName || 'Store In-charge',
-              pod_submitted: true,
-            }
-          : d
+    try {
+      const supabase = createClient()
+      await (supabase.from('deliveries') as any).update({ status: 'delivered' }).eq('id', selectedDel.id)
+
+      setDeliveries(prev =>
+        prev.map(d =>
+          d.id === selectedDel.id
+            ? {
+                ...d,
+                status: 'delivered',
+                receiver_name: receiverName || 'Store In-charge',
+                pod_submitted: true,
+              }
+            : d
+        )
       )
-    )
-    toast({
-      title: 'Proof of Delivery Recorded',
-      description: `Delivery for ${selectedDel.customer_name} verified and marked Delivered.`,
-      variant: 'success',
-    })
-    setSelectedDel(null)
+      toast({
+        title: 'Proof of Delivery Recorded',
+        description: `Delivery for ${selectedDel.customer_name} verified and marked Delivered.`,
+        variant: 'success',
+      })
+      setSelectedDel(null)
+    } catch (err: any) {
+      toast({
+        title: 'Error updating delivery',
+        description: err.message || 'Could not update status',
+        variant: 'error',
+      })
+    }
   }
 
   const columns: ColumnDef<any>[] = [

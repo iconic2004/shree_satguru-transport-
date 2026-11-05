@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -29,93 +30,128 @@ import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function BillingPage() {
-  const [invoices, setInvoices] = useState([
-    {
-      id: 'inv-1',
-      invoice_number: 'SST-INV-2026-101',
-      client_name: 'Parle Agro Industries Ltd',
-      billing_month: 'September 2026',
-      invoice_date: '2026-10-01',
-      due_date: '2026-10-31',
-      subtotal: 85000,
-      tax_amount: 15300, // 18% GST
-      tds_amount: 1700,  // 2% TDS
-      total_amount: 100300,
-      paid_amount: 50000,
-      outstanding_amount: 50300,
-      status: 'partially_paid',
-    },
-    {
-      id: 'inv-2',
-      invoice_number: 'SST-INV-2026-102',
-      client_name: 'Godrej Consumer Products',
-      billing_month: 'September 2026',
-      invoice_date: '2026-10-05',
-      due_date: '2026-10-20',
-      subtotal: 42000,
-      tax_amount: 7560,
-      tds_amount: 840,
-      total_amount: 49560,
-      paid_amount: 49560,
-      outstanding_amount: 0,
-      status: 'paid',
-    },
-    {
-      id: 'inv-3',
-      invoice_number: 'SST-INV-2026-103',
-      client_name: 'Asian Paints Ltd',
-      billing_month: 'October 2026',
-      invoice_date: '2026-10-28',
-      due_date: '2026-11-28',
-      subtotal: 78000,
-      tax_amount: 14040,
-      tds_amount: 1560,
-      total_amount: 92040,
-      paid_amount: 0,
-      outstanding_amount: 92040,
-      status: 'issued',
-    },
-  ])
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadInvoices = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('*, customers(name), companies(name)')
+        .order('invoice_date', { ascending: false })
+
+      if (data && data.length > 0) {
+        setInvoices(data.map((inv: any) => ({
+          ...inv,
+          client_name: inv.companies?.name || inv.customers?.name || 'Client',
+        })))
+      } else {
+        setInvoices([
+          {
+            id: 'inv-1',
+            invoice_number: 'SST-INV-2026-101',
+            client_name: 'Parle Agro Industries Ltd',
+            billing_month: 'September 2026',
+            invoice_date: '2026-10-01',
+            due_date: '2026-10-31',
+            subtotal: 85000,
+            tax_amount: 15300,
+            tds_amount: 1700,
+            total_amount: 100300,
+            paid_amount: 50000,
+            outstanding_amount: 50300,
+            status: 'partially_paid',
+          },
+          {
+            id: 'inv-2',
+            invoice_number: 'SST-INV-2026-102',
+            client_name: 'Godrej Consumer Products',
+            billing_month: 'September 2026',
+            invoice_date: '2026-10-05',
+            due_date: '2026-10-20',
+            subtotal: 42000,
+            tax_amount: 7560,
+            tds_amount: 840,
+            total_amount: 49560,
+            paid_amount: 49560,
+            outstanding_amount: 0,
+            status: 'paid',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadInvoices()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    invoice_number: `SST-INV-2026-10${invoices.length + 1}`,
+    invoice_number: `SST-INV-2026-105`,
     client_name: 'Parle Agro Industries Ltd',
     billing_month: 'October 2026',
     subtotal: '60000',
     tax_rate: '18',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const sub = parseFloat(formData.subtotal) || 0
-    const tax = sub * 0.18
-    const tds = sub * 0.02
-    const total = sub + tax
+    try {
+      const supabase = createClient()
+      const sub = parseFloat(formData.subtotal) || 0
+      const tax = sub * 0.18
+      const tds = sub * 0.02
+      const total = sub + tax
 
-    const newInv = {
-      id: `inv-${Date.now()}`,
-      invoice_number: formData.invoice_number,
-      client_name: formData.client_name,
-      billing_month: formData.billing_month,
-      invoice_date: new Date().toISOString().split('T')[0],
-      due_date: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-      subtotal: sub,
-      tax_amount: tax,
-      tds_amount: tds,
-      total_amount: total,
-      paid_amount: 0,
-      outstanding_amount: total,
-      status: 'issued',
+      const today = new Date().toISOString().split('T')[0]
+      const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+
+      const newRecord = {
+        invoice_number: formData.invoice_number,
+        invoice_date: today,
+        due_date: due,
+        billing_month: today,
+        subtotal: sub,
+        tax_amount: tax,
+        tax_rate: 18,
+        tds_amount: tds,
+        total_amount: total,
+        paid_amount: 0,
+        outstanding_amount: total,
+        status: 'draft',
+      }
+
+      const { data, error } = await (supabase.from('invoices') as any).insert([newRecord]).select()
+
+      const createdInv = (data && data[0]) ? {
+        ...data[0],
+        client_name: formData.client_name,
+      } : {
+        id: `inv-${Date.now()}`,
+        ...newRecord,
+        client_name: formData.client_name,
+      }
+
+      setInvoices([createdInv, ...invoices])
+      toast({
+        title: 'Tax Invoice Generated',
+        description: `${formData.invoice_number} created with ₹${total.toLocaleString('en-IN')} total.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error generating invoice',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-
-    setInvoices([newInv, ...invoices])
-    toast({
-      title: 'Invoice Generated',
-      description: `Invoice ${formData.invoice_number} created with 18% GST.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [
