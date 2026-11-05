@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
@@ -24,17 +24,43 @@ interface StaffAttendanceRow {
 export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [isSaved, setIsSaved] = useState(true)
+  const [loading, setLoading] = useState(true)
 
-  const [records, setRecords] = useState<StaffAttendanceRow[]>([
-    { id: '1', name: 'Ramesh Yadav', type: 'driver', status: 'present', remarks: 'On route MH-04-GP-4521' },
-    { id: '2', name: 'Santosh Patil', type: 'driver', status: 'present', remarks: 'Bhiwandi to Thane route' },
-    { id: '3', name: 'Mohammad Irfan', type: 'driver', status: 'present', remarks: 'Local tempo dispatch' },
-    { id: '4', name: 'Dnyaneshwar Shinde', type: 'driver', status: 'half_day', remarks: 'Left after 12:30 PM' },
-    { id: '5', name: 'Baban Kamble', type: 'labourer', status: 'present', remarks: 'Bhiwandi Godown loading' },
-    { id: '6', name: 'Sunil Pawar', type: 'labourer', status: 'present', remarks: 'Bhiwandi Godown loading' },
-    { id: '7', name: 'Deepak More', type: 'helper', status: 'present', remarks: 'Vehicle helper with Santosh' },
-    { id: '8', name: 'Vijay Jadhav', type: 'labourer', status: 'absent', remarks: 'Medical leave informed' },
-  ])
+  const [records, setRecords] = useState<StaffAttendanceRow[]>([])
+
+  // Load drivers and staff from database
+  useEffect(() => {
+    const loadStaff = async () => {
+      try {
+        setLoading(true)
+        const supabase = createClient()
+        const [driversRes, staffRes] = await Promise.all([
+          supabase.from('drivers').select('id, full_name').order('full_name'),
+          supabase.from('staff_members').select('id, full_name, staff_type').order('full_name'),
+        ])
+
+        const rows: StaffAttendanceRow[] = []
+        if (driversRes.data) {
+          driversRes.data.forEach((d: any) => {
+            rows.push({ id: `drv-${d.id}`, name: d.full_name, type: 'driver', status: 'present', remarks: '' })
+          })
+        }
+        if (staffRes.data) {
+          staffRes.data.forEach((s: any) => {
+            rows.push({ id: `stf-${s.id}`, name: s.full_name, type: (s.staff_type as any) || 'labourer', status: 'present', remarks: '' })
+          })
+        }
+
+        setRecords(rows)
+      } catch (err) {
+        console.error('Failed to load staff for attendance:', err)
+        setRecords([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadStaff()
+  }, [])
 
   const setStatus = (id: string, status: AttendanceStatus) => {
     setRecords(prev =>
@@ -141,7 +167,14 @@ export default function AttendancePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {records.map((staff) => (
+              {records.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center py-12 text-gray-500 text-sm">
+                    No drivers or staff registered yet. Add drivers and staff first to mark attendance.
+                  </TableCell>
+                </TableRow>
+              ) : (
+              records.map((staff) => (
                 <TableRow key={staff.id} className="hover:bg-slate-50">
                   <TableCell>
                     <div>
@@ -225,7 +258,8 @@ export default function AttendancePage() {
                     />
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         </div>
