@@ -145,17 +145,39 @@ COMMENT ON FUNCTION public.get_user_role(UUID) IS 'Returns the role of a user by
 
 -- ============================================================================
 -- Helper function: auto-create profile on auth.users insert
+-- Automatically grants super_admin to the first registered user
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  is_first_user BOOLEAN;
+  assigned_role public.user_role;
 BEGIN
-  INSERT INTO public.profiles (id, full_name, avatar_url, phone)
+  -- If this is the first profile being created, assign super_admin
+  SELECT (COUNT(*) = 0) INTO is_first_user FROM public.profiles;
+
+  IF is_first_user THEN
+    assigned_role := 'super_admin'::public.user_role;
+  ELSE
+    BEGIN
+      assigned_role := (NEW.raw_user_meta_data ->> 'role')::public.user_role;
+    EXCEPTION WHEN OTHERS THEN
+      assigned_role := 'warehouse_staff'::public.user_role;
+    END;
+  END IF;
+
+  INSERT INTO public.profiles (id, full_name, avatar_url, phone, role)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data ->> 'full_name', NEW.email),
     NEW.raw_user_meta_data ->> 'avatar_url',
-    NEW.raw_user_meta_data ->> 'phone'
-  );
+    NEW.raw_user_meta_data ->> 'phone',
+    COALESCE(assigned_role, 'warehouse_staff'::public.user_role)
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET full_name = EXCLUDED.full_name,
+      role = CASE WHEN public.profiles.role = 'super_admin' THEN 'super_admin' ELSE EXCLUDED.role END;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

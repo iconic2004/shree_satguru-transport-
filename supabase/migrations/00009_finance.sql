@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   notes               TEXT,
   approved_by         UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   issued_at           TIMESTAMPTZ,
-  created_by          UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  created_by          UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -209,7 +209,7 @@ CREATE TABLE IF NOT EXISTS public.expenses (
   driver_id       UUID REFERENCES public.drivers(id) ON DELETE SET NULL,
   receipt_url     TEXT,
   description     TEXT,
-  entered_by      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
+  entered_by      UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   remarks         TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -77,14 +77,16 @@ INSERT INTO public.deliveries (id, dispatch_id, driver_id, vehicle_id, customer_
 ON CONFLICT (id) DO NOTHING;
 
 -- 11. Sample Operating Expenses
-INSERT INTO public.expenses (id, expense_date, category, amount, payment_method, vendor, vehicle_id, description) VALUES
-('50000001-0000-0000-0000-000000000001', CURRENT_DATE - INTERVAL '1 day', 'diesel_fuel', 8500.00, 'upi', 'Indian Oil Corporation, Bhiwandi', 'e0000001-0000-0000-0000-000000000001', 'Diesel 92 Litres for MH-04-GP-4521'),
-('50000001-0000-0000-0000-000000000002', CURRENT_DATE - INTERVAL '2 days', 'toll', 680.00, 'upi', 'Fastag Toll Plaza', 'e0000001-0000-0000-0000-000000000001', 'Mumbai-Pune Expressway Toll'),
-('50000001-0000-0000-0000-000000000003', CURRENT_DATE - INTERVAL '3 days', 'vehicle_repair', 3200.00, 'cash', 'Sai Auto Garage', 'e0000001-0000-0000-0000-000000000003', 'Brake pad replacement and oil top-up')
+ALTER TABLE public.expenses ALTER COLUMN entered_by DROP NOT NULL;
+INSERT INTO public.expenses (id, expense_date, category, amount, payment_method, vendor, vehicle_id, description, entered_by) VALUES
+('50000001-0000-0000-0000-000000000001', CURRENT_DATE - INTERVAL '1 day', 'diesel_fuel', 8500.00, 'upi', 'Indian Oil Corporation, Bhiwandi', 'e0000001-0000-0000-0000-000000000001', 'Diesel 92 Litres for MH-04-GP-4521', (SELECT id FROM public.profiles LIMIT 1)),
+('50000001-0000-0000-0000-000000000002', CURRENT_DATE - INTERVAL '2 days', 'toll', 680.00, 'upi', 'Fastag Toll Plaza', 'e0000001-0000-0000-0000-000000000001', 'Mumbai-Pune Expressway Toll', (SELECT id FROM public.profiles LIMIT 1)),
+('50000001-0000-0000-0000-000000000003', CURRENT_DATE - INTERVAL '3 days', 'vehicle_repair', 3200.00, 'cash', 'Sai Auto Garage', 'e0000001-0000-0000-0000-000000000003', 'Brake pad replacement and oil top-up', (SELECT id FROM public.profiles LIMIT 1))
 ON CONFLICT (id) DO NOTHING;
 
 -- 12. Sample Invoices
-INSERT INTO public.invoices (id, invoice_number, customer_id, company_id, billing_month, invoice_date, due_date, subtotal, tax_amount, tax_rate, tds_amount, total_amount, paid_amount, outstanding_amount, status, gst_number) VALUES
-('60000001-0000-0000-0000-000000000001', 'SST-INV-2026-101', 'd0000001-0000-0000-0000-000000000001', 'c0000001-0000-0000-0000-000000000001', '2026-09-01', '2026-10-01', '2026-10-31', 85000.00, 15300.00, 18.00, 1700.00, 100300.00, 50000.00, 50300.00, 'partially_paid', '27AAACP1234A1Z5'),
-('60000001-0000-0000-0000-000000000002', 'SST-INV-2026-102', 'd0000001-0000-0000-0000-000000000002', 'c0000001-0000-0000-0000-000000000002', '2026-09-01', '2026-10-05', '2026-10-20', 42000.00, 7560.00, 18.00, 840.00, 49560.00, 49560.00, 0.00, 'paid', '27AAACG5678B2Z1')
+ALTER TABLE public.invoices ALTER COLUMN created_by DROP NOT NULL;
+INSERT INTO public.invoices (id, invoice_number, customer_id, company_id, billing_month, invoice_date, due_date, subtotal, tax_amount, tax_rate, tds_amount, total_amount, paid_amount, outstanding_amount, status, gst_number, created_by) VALUES
+('60000001-0000-0000-0000-000000000001', 'SST-INV-2026-101', 'd0000001-0000-0000-0000-000000000001', 'c0000001-0000-0000-0000-000000000001', '2026-09-01', '2026-10-01', '2026-10-31', 85000.00, 15300.00, 18.00, 1700.00, 100300.00, 50000.00, 50300.00, 'partially_paid', '27AAACP1234A1Z5', (SELECT id FROM public.profiles LIMIT 1)),
+('60000001-0000-0000-0000-000000000002', 'SST-INV-2026-102', 'd0000001-0000-0000-0000-000000000002', 'c0000001-0000-0000-0000-000000000002', '2026-09-01', '2026-10-05', '2026-10-20', 42000.00, 7560.00, 18.00, 840.00, 49560.00, 49560.00, 0.00, 'paid', '27AAACG5678B2Z1', (SELECT id FROM public.profiles LIMIT 1))
 ON CONFLICT (id) DO NOTHING;

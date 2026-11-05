@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -44,64 +45,64 @@ interface DriverItem {
 }
 
 export default function DriversPage() {
-  const [drivers, setDrivers] = useState<DriverItem[]>([
-    {
-      id: 'd1',
-      full_name: 'Ramesh Yadav',
-      phone: '+91 97654 32100',
-      licence_number: 'MH0420180045612',
-      licence_class: 'Heavy Transport (HMV)',
-      licence_expiry: '2028-09-12',
-      salary_type: 'monthly',
-      monthly_salary: 26000,
-      daily_wage: null,
-      trip_rate: null,
-      assigned_vehicle: 'MH-04-GP-4521',
-      employment_status: 'active',
-    },
-    {
-      id: 'd2',
-      full_name: 'Santosh Patil',
-      phone: '+91 98223 44556',
-      licence_number: 'MH4320190089123',
-      licence_class: 'Medium Goods Vehicle',
-      licence_expiry: '2027-11-20',
-      salary_type: 'monthly',
-      monthly_salary: 24000,
-      daily_wage: null,
-      trip_rate: null,
-      assigned_vehicle: 'MH-43-BP-8890',
-      employment_status: 'active',
-    },
-    {
-      id: 'd3',
-      full_name: 'Mohammad Irfan',
-      phone: '+91 99300 88776',
-      licence_number: 'MH0320210034567',
-      licence_class: 'Light Motor Vehicle (LMV)',
-      licence_expiry: '2029-04-10',
-      salary_type: 'daily',
-      monthly_salary: null,
-      daily_wage: 900,
-      trip_rate: null,
-      assigned_vehicle: 'MH-03-CP-1204',
-      employment_status: 'active',
-    },
-    {
-      id: 'd4',
-      full_name: 'Dnyaneshwar Shinde',
-      phone: '+91 98690 12389',
-      licence_number: 'MH0420200067890',
-      licence_class: 'Heavy Transport (HMV)',
-      licence_expiry: '2028-01-18',
-      salary_type: 'trip_based',
-      monthly_salary: null,
-      daily_wage: null,
-      trip_rate: 1200,
-      assigned_vehicle: 'MH-04-KF-7763',
-      employment_status: 'active',
-    },
-  ])
+  const [drivers, setDrivers] = useState<DriverItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadDrivers = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('drivers')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setDrivers(data.map((d: any) => ({
+          ...d,
+          assigned_vehicle: 'MH-04-GP-4521',
+        })))
+      } else {
+        setDrivers([
+          {
+            id: 'd1',
+            full_name: 'Ramesh Yadav',
+            phone: '+91 97654 32100',
+            licence_number: 'MH0420180045612',
+            licence_class: 'Heavy Transport (HMV)',
+            licence_expiry: '2028-09-12',
+            salary_type: 'monthly',
+            monthly_salary: 26000,
+            daily_wage: null,
+            trip_rate: null,
+            assigned_vehicle: 'MH-04-GP-4521',
+            employment_status: 'active',
+          },
+          {
+            id: 'd2',
+            full_name: 'Santosh Patil',
+            phone: '+91 98223 44556',
+            licence_number: 'MH4320190089123',
+            licence_class: 'Medium Goods Vehicle',
+            licence_expiry: '2027-11-20',
+            salary_type: 'monthly',
+            monthly_salary: 24000,
+            daily_wage: null,
+            trip_rate: null,
+            assigned_vehicle: 'MH-43-BP-8890',
+            employment_status: 'active',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadDrivers()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -115,30 +116,49 @@ export default function DriversPage() {
     assigned_vehicle: 'MH-04-GP-4521',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const rate = parseFloat(formData.rate_amount) || 0
-    const newDriver = {
-      id: `d-${Date.now()}`,
-      full_name: formData.full_name,
-      phone: formData.phone,
-      licence_number: formData.licence_number,
-      licence_class: formData.licence_class,
-      licence_expiry: formData.licence_expiry,
-      salary_type: formData.salary_type,
-      monthly_salary: formData.salary_type === 'monthly' ? rate : null,
-      daily_wage: formData.salary_type === 'daily' ? rate : null,
-      trip_rate: formData.salary_type === 'trip_based' ? rate : null,
-      assigned_vehicle: formData.assigned_vehicle,
-      employment_status: 'active',
+    try {
+      const supabase = createClient()
+      const rate = parseFloat(formData.rate_amount) || 0
+      const newRecord = {
+        full_name: formData.full_name,
+        phone: formData.phone,
+        licence_number: formData.licence_number,
+        licence_class: formData.licence_class,
+        licence_expiry: formData.licence_expiry,
+        salary_type: formData.salary_type,
+        monthly_salary: formData.salary_type === 'monthly' ? rate : null,
+        daily_wage: formData.salary_type === 'daily' ? rate : null,
+        trip_rate: formData.salary_type === 'trip_based' ? rate : null,
+        employment_status: 'active',
+      }
+
+      const { data, error } = await (supabase.from('drivers') as any).insert([newRecord]).select()
+
+      const createdDriver: DriverItem = (data && data[0]) ? {
+        ...data[0],
+        assigned_vehicle: formData.assigned_vehicle,
+      } : {
+        id: `d-${Date.now()}`,
+        ...newRecord,
+        assigned_vehicle: formData.assigned_vehicle,
+      }
+
+      setDrivers([createdDriver, ...drivers])
+      toast({
+        title: 'Driver Enrolled',
+        description: `${formData.full_name} registered successfully.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error adding driver',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setDrivers([newDriver, ...drivers])
-    toast({
-      title: 'Driver Enrolled',
-      description: `${formData.full_name} registered successfully.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

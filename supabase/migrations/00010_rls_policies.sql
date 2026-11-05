@@ -4,9 +4,10 @@
 -- ============================================================================
 
 -- Helper functions for role-based security
-CREATE OR REPLACE FUNCTION public.get_user_role(uid UUID)
+DROP FUNCTION IF EXISTS public.get_user_role(UUID) CASCADE;
+CREATE OR REPLACE FUNCTION public.get_user_role(p_user_id UUID)
 RETURNS TEXT AS $$
-  SELECT role::text FROM public.profiles WHERE id = uid;
+  SELECT role::text FROM public.profiles WHERE id = p_user_id;
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 CREATE OR REPLACE FUNCTION public.is_super_admin(uid UUID)

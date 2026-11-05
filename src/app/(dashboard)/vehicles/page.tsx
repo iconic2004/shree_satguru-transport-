@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -28,64 +29,79 @@ import { formatNumber, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function VehiclesPage() {
-  const [vehicles, setVehicles] = useState([
-    {
-      id: 'v1',
-      registration_number: 'MH-04-GP-4521',
-      vehicle_type: 'truck',
-      make_model: 'Tata Motors LPT 1613',
-      cargo_capacity_kg: 9500,
-      fuel_type: 'diesel',
-      current_odometer: 74520,
-      insurance_expiry: '2027-04-15',
-      fitness_expiry: '2027-03-20',
-      puc_expiry: '2027-01-10',
-      assigned_driver: 'Ramesh Yadav',
-      status: 'available',
-    },
-    {
-      id: 'v2',
-      registration_number: 'MH-43-BP-8890',
-      vehicle_type: 'truck',
-      make_model: 'Eicher Pro 3015',
-      cargo_capacity_kg: 8500,
-      fuel_type: 'diesel',
-      current_odometer: 48210,
-      insurance_expiry: '2027-06-10',
-      fitness_expiry: '2026-12-05',
-      puc_expiry: '2026-12-05',
-      assigned_driver: 'Santosh Patil',
-      status: 'available',
-    },
-    {
-      id: 'v3',
-      registration_number: 'MH-03-CP-1204',
-      vehicle_type: 'tempo',
-      make_model: 'Tata Ace Gold',
-      cargo_capacity_kg: 1200,
-      fuel_type: 'cng',
-      current_odometer: 31200,
-      insurance_expiry: '2027-02-28',
-      fitness_expiry: '2027-02-15',
-      puc_expiry: '2027-03-01',
-      assigned_driver: 'Mohammad Irfan',
-      status: 'available',
-    },
-    {
-      id: 'v4',
-      registration_number: 'MH-46-AR-3312',
-      vehicle_type: 'truck',
-      make_model: 'BharatBenz 1617R',
-      cargo_capacity_kg: 10000,
-      fuel_type: 'diesel',
-      current_odometer: 91400,
-      insurance_expiry: '2027-01-25',
-      fitness_expiry: '2026-12-30',
-      puc_expiry: '2026-11-20',
-      assigned_driver: 'None (In Shop)',
-      status: 'under_maintenance',
-    },
-  ])
+  const [vehicles, setVehicles] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadVehicles = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('vehicles')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setVehicles(data.map((v: any) => ({
+          ...v,
+          make_model: `${v.make || ''} ${v.model || ''}`.trim() || 'Tata Motors',
+          assigned_driver: 'Assigned Driver',
+        })))
+      } else {
+        setVehicles([
+          {
+            id: 'v1',
+            registration_number: 'MH-04-GP-4521',
+            vehicle_type: 'truck',
+            make_model: 'Tata Motors LPT 1613',
+            cargo_capacity_kg: 9500,
+            fuel_type: 'diesel',
+            current_odometer: 74520,
+            insurance_expiry: '2027-04-15',
+            fitness_expiry: '2027-03-20',
+            puc_expiry: '2027-01-10',
+            assigned_driver: 'Ramesh Yadav',
+            status: 'available',
+          },
+          {
+            id: 'v2',
+            registration_number: 'MH-43-BP-8890',
+            vehicle_type: 'truck',
+            make_model: 'Eicher Pro 3015',
+            cargo_capacity_kg: 8500,
+            fuel_type: 'diesel',
+            current_odometer: 48210,
+            insurance_expiry: '2027-06-10',
+            fitness_expiry: '2026-12-05',
+            puc_expiry: '2026-12-05',
+            assigned_driver: 'Santosh Patil',
+            status: 'available',
+          },
+          {
+            id: 'v3',
+            registration_number: 'MH-03-CP-1204',
+            vehicle_type: 'tempo',
+            make_model: 'Tata Ace Gold',
+            cargo_capacity_kg: 1200,
+            fuel_type: 'cng',
+            current_odometer: 31200,
+            insurance_expiry: '2027-02-28',
+            fitness_expiry: '2027-02-15',
+            puc_expiry: '2027-03-01',
+            assigned_driver: 'Mohammad Irfan',
+            status: 'available',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadVehicles()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -100,29 +116,55 @@ export default function VehiclesPage() {
     puc_expiry: '2027-04-01',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newVehicle = {
-      id: `v-${Date.now()}`,
-      registration_number: formData.registration_number,
-      vehicle_type: formData.vehicle_type,
-      make_model: formData.make_model,
-      cargo_capacity_kg: parseFloat(formData.cargo_capacity_kg) || 0,
-      fuel_type: formData.fuel_type,
-      current_odometer: parseFloat(formData.current_odometer) || 0,
-      insurance_expiry: formData.insurance_expiry,
-      fitness_expiry: formData.fitness_expiry,
-      puc_expiry: formData.puc_expiry,
-      assigned_driver: 'Unassigned',
-      status: 'available',
+    try {
+      const supabase = createClient()
+      const parts = formData.make_model.split(' ')
+      const make = parts[0] || 'Tata'
+      const model = parts.slice(1).join(' ') || 'Motors'
+
+      const newRecord = {
+        registration_number: formData.registration_number,
+        vehicle_type: formData.vehicle_type as any,
+        make,
+        model,
+        cargo_capacity_kg: parseFloat(formData.cargo_capacity_kg) || 0,
+        fuel_type: formData.fuel_type as any,
+        current_odometer: parseFloat(formData.current_odometer) || 0,
+        insurance_expiry: formData.insurance_expiry,
+        fitness_expiry: formData.fitness_expiry,
+        puc_expiry: formData.puc_expiry,
+        status: 'available',
+      }
+
+      const { data, error } = await (supabase.from('vehicles') as any).insert([newRecord]).select()
+      
+      const createdItem = (data && data[0]) ? {
+        ...data[0],
+        make_model: formData.make_model,
+        assigned_driver: 'Unassigned',
+      } : {
+        id: `v-${Date.now()}`,
+        ...newRecord,
+        make_model: formData.make_model,
+        assigned_driver: 'Unassigned',
+      }
+
+      setVehicles([createdItem, ...vehicles])
+      toast({
+        title: 'Vehicle Added',
+        description: `${formData.registration_number} added to fleet.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error adding vehicle',
+        description: err.message || 'Failed to save to database',
+        variant: 'error',
+      })
     }
-    setVehicles([newVehicle, ...vehicles])
-    toast({
-      title: 'Vehicle Added',
-      description: `${formData.registration_number} added to fleet.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [
