@@ -162,6 +162,11 @@ export default function LoadingUnloadingPage() {
     },
   ]
 
+  const activeLoadings = operations.filter(op => op.status === 'in_progress' || op.status === 'loading').length
+  const completedToday = operations.filter(op => op.status === 'completed' || op.status === 'verified').length
+  const activeHelpers = operations.reduce((acc, curr) => acc + (curr.labourers && curr.labourers !== 'Assigned Staff' ? curr.labourers.split(',').length : 0), 0)
+  const flaggedDiscrepancies = operations.filter(op => op.status === 'discrepancy' || (op.expected_qty && op.actual_qty && op.expected_qty !== op.actual_qty)).length
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -172,29 +177,29 @@ export default function LoadingUnloadingPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KPICard
           title="Active Loadings"
-          value="1"
+          value={activeLoadings.toString()}
           subtitle="Currently at bay"
           icon={Loader2}
           iconClassName="bg-amber-50 text-amber-700"
         />
         <KPICard
           title="Completed Today"
-          value="2"
+          value={completedToday.toString()}
           subtitle="Slips generated"
           icon={CheckCircle}
           iconClassName="bg-emerald-50 text-emerald-700"
         />
         <KPICard
           title="Active Labour Helpers"
-          value="6"
+          value={activeHelpers.toString()}
           subtitle="Working across godowns"
           icon={Users}
           iconClassName="bg-blue-50 text-blue-700"
         />
         <KPICard
           title="Discrepancies Flagged"
-          value="1"
-          subtitle="2 cartons damaged"
+          value={flaggedDiscrepancies.toString()}
+          subtitle={flaggedDiscrepancies > 0 ? `${flaggedDiscrepancies} discrepant` : 'No issues reported'}
           icon={Clock}
           iconClassName="bg-rose-50 text-rose-700"
         />

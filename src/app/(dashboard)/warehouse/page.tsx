@@ -164,6 +164,11 @@ export default function WarehousePage() {
     },
   ]
 
+  const totalPackages = inventory.reduce((sum, item) => sum + (Number(item.actual_qty) || 0), 0)
+  const pendingInspection = inventory.filter(item => item.status === 'verification_pending').length
+  const availableStock = inventory.reduce((sum, item) => sum + (Number(item.available_qty) || 0), 0)
+  const activeWarehousesCount = new Set(inventory.map(item => item.warehouse_name).filter(Boolean)).size
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -174,27 +179,27 @@ export default function WarehousePage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KPICard
           title="Active Warehouses"
-          value="3"
-          subtitle="Bhiwandi, Vashi & Kalamboli"
+          value={activeWarehousesCount.toString()}
+          subtitle="Operational facilities"
           icon={Warehouse}
         />
         <KPICard
           title="Total Stored Packages"
-          value="768"
+          value={totalPackages.toString()}
           subtitle="Across all bays"
           icon={Box}
           iconClassName="bg-blue-50 text-blue-700"
         />
         <KPICard
           title="Inspection Pending"
-          value="1"
-          subtitle="Consignment awaiting count"
+          value={pendingInspection.toString()}
+          subtitle="Consignments awaiting count"
           icon={AlertTriangle}
           iconClassName="bg-amber-50 text-amber-700"
         />
         <KPICard
           title="Available Stock"
-          value="766"
+          value={availableStock.toString()}
           subtitle="Ready for truck loading"
           icon={CheckSquare}
           iconClassName="bg-emerald-50 text-emerald-700"

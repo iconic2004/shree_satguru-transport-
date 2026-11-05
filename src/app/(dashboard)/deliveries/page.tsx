@@ -195,6 +195,11 @@ export default function DeliveriesPage() {
     },
   ]
 
+  const scheduledCount = deliveries.length
+  const deliveredCount = deliveries.filter(d => d.status === 'delivered').length
+  const inTransitCount = deliveries.filter(d => d.status === 'in_transit').length
+  const failedCount = deliveries.filter(d => d.status === 'failed').length
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -205,27 +210,27 @@ export default function DeliveriesPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <KPICard
           title="Scheduled Deliveries"
-          value="14"
+          value={scheduledCount.toString()}
           subtitle="Today across all routes"
           icon={MapPin}
         />
         <KPICard
           title="Delivered Successfully"
-          value="9"
+          value={deliveredCount.toString()}
           subtitle="Signed POD submitted"
           icon={CheckCircle2}
           iconClassName="bg-emerald-50 text-emerald-700"
         />
         <KPICard
           title="Active In-Transit"
-          value="4"
+          value={inTransitCount.toString()}
           subtitle="Trucks on highway"
           icon={MapPin}
           iconClassName="bg-blue-50 text-blue-700"
         />
         <KPICard
           title="Failed / Rescheduled"
-          value="1"
+          value={failedCount.toString()}
           subtitle="Requires redelivery plan"
           icon={AlertTriangle}
           iconClassName="bg-rose-50 text-rose-700"
