@@ -44,46 +44,19 @@ export default function UsersAdminPage() {
           data.map((u: any) => ({
             id: u.id,
             full_name: u.full_name || 'Staff User',
-            email: u.email || `${u.full_name?.toLowerCase().replace(/\s+/g, '.')}@satgurutransport.com`,
+            email: u.email || '',
             role: (u.role || 'operations_manager') as UserRole,
-            phone: u.phone || '+91 98200 00000',
+            phone: u.phone || '',
             is_active: u.is_active ?? true,
             created_at: u.created_at || new Date().toISOString(),
           }))
         )
       } else {
-        setUsers([
-          {
-            id: 'usr-1',
-            full_name: 'Super Admin Officer',
-            email: 'admin@satgurutransport.com',
-            role: 'super_admin' as UserRole,
-            phone: '+91 98200 11111',
-            is_active: true,
-            created_at: '2026-01-10',
-          },
-          {
-            id: 'usr-2',
-            full_name: 'Dinesh Sharma (Ops Head)',
-            email: 'ops@satgurutransport.com',
-            role: 'operations_manager' as UserRole,
-            phone: '+91 98200 22222',
-            is_active: true,
-            created_at: '2026-02-15',
-          },
-          {
-            id: 'usr-3',
-            full_name: 'Pooja Verma (Chief Accountant)',
-            email: 'accounts@satgurutransport.com',
-            role: 'accountant' as UserRole,
-            phone: '+91 98200 33333',
-            is_active: true,
-            created_at: '2026-03-01',
-          },
-        ])
+        setUsers([])
       }
     } catch (err) {
       console.error('Failed to load users:', err)
+      setUsers([])
     } finally {
       setLoading(false)
     }

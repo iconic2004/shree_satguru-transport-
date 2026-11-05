@@ -59,39 +59,10 @@ export default function DriversPage() {
       if (data && data.length > 0) {
         setDrivers(data.map((d: any) => ({
           ...d,
-          assigned_vehicle: 'MH-04-GP-4521',
+          assigned_vehicle: 'Unassigned',
         })))
       } else {
-        setDrivers([
-          {
-            id: 'd1',
-            full_name: 'Ramesh Yadav',
-            phone: '+91 97654 32100',
-            licence_number: 'MH0420180045612',
-            licence_class: 'Heavy Transport (HMV)',
-            licence_expiry: '2028-09-12',
-            salary_type: 'monthly',
-            monthly_salary: 26000,
-            daily_wage: null,
-            trip_rate: null,
-            assigned_vehicle: 'MH-04-GP-4521',
-            employment_status: 'active',
-          },
-          {
-            id: 'd2',
-            full_name: 'Santosh Patil',
-            phone: '+91 98223 44556',
-            licence_number: 'MH4320190089123',
-            licence_class: 'Medium Goods Vehicle',
-            licence_expiry: '2027-11-20',
-            salary_type: 'monthly',
-            monthly_salary: 24000,
-            daily_wage: null,
-            trip_rate: null,
-            assigned_vehicle: 'MH-43-BP-8890',
-            employment_status: 'active',
-          },
-        ])
+        setDrivers([])
       }
     } catch (err) {
       console.error(err)
@@ -112,8 +83,8 @@ export default function DriversPage() {
     licence_class: 'Heavy Transport (HMV)',
     licence_expiry: '2028-01-01',
     salary_type: 'monthly',
-    rate_amount: '25000',
-    assigned_vehicle: 'MH-04-GP-4521',
+    rate_amount: '',
+    assigned_vehicle: '',
   })
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -278,7 +249,7 @@ export default function DriversPage() {
               <Label className="text-xs font-semibold">Full Name *</Label>
               <Input
                 required
-                placeholder="Ramesh Yadav"
+                placeholder="e.g. Driver Full Name"
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               />
@@ -359,7 +330,7 @@ export default function DriversPage() {
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Assigned Truck</Label>
               <Input
-                placeholder="MH-04-GP-4521"
+                placeholder="e.g. MH-04-AB-1234"
                 value={formData.assigned_vehicle}
                 onChange={(e) => setFormData({ ...formData, assigned_vehicle: e.target.value })}
               />

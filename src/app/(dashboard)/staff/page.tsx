@@ -44,28 +44,7 @@ export default function StaffPage() {
       if (data && data.length > 0) {
         setStaff(data)
       } else {
-        setStaff([
-          {
-            id: 'st-1',
-            full_name: 'Baban Kamble',
-            staff_type: 'labourer',
-            phone: '+91 96190 22334',
-            daily_wage: 650,
-            payment_method_preference: 'cash',
-            employment_status: 'active',
-            joining_date: '2023-02-10',
-          },
-          {
-            id: 'st-2',
-            full_name: 'Sunil Pawar',
-            staff_type: 'labourer',
-            phone: '+91 98330 44556',
-            daily_wage: 650,
-            payment_method_preference: 'cash',
-            employment_status: 'active',
-            joining_date: '2023-04-01',
-          },
-        ])
+        setStaff([])
       }
     } catch (err) {
       console.error(err)

@@ -46,43 +46,21 @@ export default function PaymentsPage() {
           data.map((p: any) => ({
             id: p.id,
             payment_date: p.payment_date,
-            client_name: p.companies?.name || p.customers?.name || 'Parle Agro Industries Ltd',
+            client_name: p.companies?.name || p.customers?.name || 'Client',
             amount: p.amount,
             payment_method: p.payment_method,
             reference_number: p.payment_reference || 'TRX-REF',
-            bank_name: p.bank_name || 'HDFC Bank Ltd',
-            allocated_invoice: p.invoices?.invoice_number || 'SST-INV-2026-101',
+            bank_name: p.bank_name || 'Bank',
+            allocated_invoice: p.invoices?.invoice_number || 'N/A',
             status: p.status || 'completed',
           }))
         )
       } else {
-        setPayments([
-          {
-            id: 'pay-c1',
-            payment_date: '2026-10-15',
-            client_name: 'Parle Agro Industries Ltd',
-            amount: 50000,
-            payment_method: 'neft',
-            reference_number: 'CMS9812401290',
-            bank_name: 'HDFC Bank Ltd',
-            allocated_invoice: 'SST-INV-2026-101',
-            status: 'completed',
-          },
-          {
-            id: 'pay-c2',
-            payment_date: '2026-10-18',
-            client_name: 'Godrej Consumer Products',
-            amount: 49560,
-            payment_method: 'rtgs',
-            reference_number: 'AXISRTGS88102',
-            bank_name: 'Axis Bank',
-            allocated_invoice: 'SST-INV-2026-102',
-            status: 'completed',
-          },
-        ])
+        setPayments([])
       }
     } catch (err: any) {
       console.error('Failed to load payments:', err)
+      setPayments([])
     } finally {
       setLoading(false)
     }
@@ -94,12 +72,12 @@ export default function PaymentsPage() {
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    client_name: 'Parle Agro Industries Ltd',
-    amount: '30000',
+    client_name: '',
+    amount: '',
     payment_method: 'neft',
     reference_number: '',
-    bank_name: 'ICICI Bank',
-    allocated_invoice: 'SST-INV-2026-101',
+    bank_name: '',
+    allocated_invoice: '',
   })
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -244,20 +222,13 @@ export default function PaymentsPage() {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3 pt-2">
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Client Company</Label>
-              <Select
+              <Label className="text-xs font-semibold">Client Company *</Label>
+              <Input
+                placeholder="Enter client company name"
                 value={formData.client_name}
-                onValueChange={(val) => setFormData({ ...formData, client_name: val })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Parle Agro Industries Ltd">Parle Agro Industries Ltd</SelectItem>
-                  <SelectItem value="Godrej Consumer Products">Godrej Consumer Products</SelectItem>
-                  <SelectItem value="Asian Paints Ltd">Asian Paints Ltd</SelectItem>
-                </SelectContent>
-              </Select>
+                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
+                required
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

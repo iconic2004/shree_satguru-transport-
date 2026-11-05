@@ -67,37 +67,11 @@ export default function PayrollPage() {
       if (list.length > 0) {
         setPayroll(list)
       } else {
-        setPayroll([
-          {
-            id: 'pay-1',
-            staff_name: 'Ramesh Yadav',
-            staff_type: 'driver',
-            period: 'October 2026',
-            gross_earnings: 27500,
-            advances_applied: 5000,
-            deductions: 0,
-            net_payable: 22500,
-            amount_paid: 22500,
-            outstanding: 0,
-            status: 'paid',
-          },
-          {
-            id: 'pay-2',
-            staff_name: 'Santosh Patil',
-            staff_type: 'driver',
-            period: 'October 2026',
-            gross_earnings: 25200,
-            advances_applied: 0,
-            deductions: 0,
-            net_payable: 25200,
-            amount_paid: 15000,
-            outstanding: 10200,
-            status: 'partially_paid',
-          },
-        ])
+        setPayroll([])
       }
     } catch (err) {
       console.error('Failed to load payroll records:', err)
+      setPayroll([])
     } finally {
       setLoading(false)
     }

@@ -48,53 +48,23 @@ export default function DispatchPage() {
           id: d.id,
           dispatch_number: d.dispatch_number,
           dispatch_date: d.dispatch_date,
-          vehicle_reg: d.vehicles ? `${d.vehicles.registration_number} (${d.vehicles.make || ''} ${d.vehicles.model || ''})`.trim() : 'MH-04-GP-4521 (Tata 1613)',
-          driver_name: d.drivers?.full_name || 'Ramesh Yadav',
-          cargo_weight_kg: d.cargo_weight_kg || 4500,
-          vehicle_capacity_kg: d.vehicles?.cargo_capacity_kg || 9500,
-          capacity_utilization_pct: d.capacity_utilization_pct || 50,
-          planned_distance_km: d.planned_distance_km || 65,
-          planned_cost: d.planned_cost || 3500,
-          stops_count: 2,
-          stops: ['Bhiwandi Godown (Origin)', 'Delivery Destination (Stop 1)'],
-          status: d.status || 'in_transit',
+          vehicle_reg: d.vehicles ? `${d.vehicles.registration_number} (${d.vehicles.make || ''} ${d.vehicles.model || ''})`.trim() : 'Fleet Vehicle',
+          driver_name: d.drivers?.full_name || 'Driver',
+          cargo_weight_kg: d.cargo_weight_kg || 0,
+          vehicle_capacity_kg: d.vehicles?.cargo_capacity_kg || 0,
+          capacity_utilization_pct: d.capacity_utilization_pct || 0,
+          planned_distance_km: d.planned_distance_km || 0,
+          planned_cost: d.planned_cost || 0,
+          stops_count: 1,
+          stops: [d.origin || 'Origin Godown', d.destination || 'Destination'],
+          status: d.status || 'draft',
         })))
       } else {
-        setDispatches([
-          {
-            id: 'dsp-1',
-            dispatch_number: 'DSP-2026-0041',
-            dispatch_date: '2026-10-29',
-            vehicle_reg: 'MH-04-GP-4521 (Tata 1613)',
-            driver_name: 'Ramesh Yadav',
-            cargo_weight_kg: 4950,
-            vehicle_capacity_kg: 9500,
-            capacity_utilization_pct: 52.1,
-            planned_distance_km: 65,
-            planned_cost: 3500,
-            stops_count: 3,
-            stops: ['Bhiwandi Godown (Origin)', 'Reliance DC (Stop 1)', 'DMart DC (Stop 2)'],
-            status: 'in_transit',
-          },
-          {
-            id: 'dsp-2',
-            dispatch_number: 'DSP-2026-0042',
-            dispatch_date: '2026-10-29',
-            vehicle_reg: 'MH-43-BP-8890 (Eicher 3015)',
-            driver_name: 'Santosh Patil',
-            cargo_weight_kg: 2400,
-            vehicle_capacity_kg: 8500,
-            capacity_utilization_pct: 28.2,
-            planned_distance_km: 45,
-            planned_cost: 2800,
-            stops_count: 2,
-            stops: ['Vashi Hub (Origin)', 'DMart Thane (Stop 1)'],
-            status: 'planned',
-          },
-        ])
+        setDispatches([])
       }
     } catch (err) {
       console.error(err)
+      setDispatches([])
     } finally {
       setLoading(false)
     }
@@ -104,20 +74,17 @@ export default function DispatchPage() {
     loadDispatches()
   }, [])
 
-  const [unassignedGoods, setUnassignedGoods] = useState([
-    { invoice: 'INV-2026-0893', product: 'Royale Luxury Emulsion (120 buckets)', weight: 3120, dest: 'Pune MIDC' },
-    { invoice: 'INV-2026-0894', product: 'Mahalaxmi Steel Pipes (40 bundles)', weight: 2800, dest: 'Panvel Yard' },
-  ])
+  const [unassignedGoods, setUnassignedGoods] = useState<any[]>([])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    dispatch_number: `DSP-2026-0045`,
-    vehicle_reg: 'MH-04-GP-4521 (Tata 1613)',
-    driver_name: 'Ramesh Yadav',
-    cargo_weight_kg: '3120',
-    planned_distance_km: '140',
-    planned_cost: '6500',
-    stops: 'Bhiwandi Central -> Pune Bhosari MIDC',
+    dispatch_number: '',
+    vehicle_reg: '',
+    driver_name: '',
+    cargo_weight_kg: '',
+    planned_distance_km: '',
+    planned_cost: '',
+    stops: '',
   })
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -336,38 +303,24 @@ export default function DispatchPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs font-semibold">Vehicle</Label>
-                <Select
+                <Label className="text-xs font-semibold">Vehicle Registration *</Label>
+                <Input
+                  required
+                  placeholder="e.g. MH-04-AB-1234"
                   value={formData.vehicle_reg}
-                  onValueChange={(val) => setFormData({ ...formData, vehicle_reg: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MH-04-GP-4521 (Tata 1613)">MH-04-GP-4521 (9.5T)</SelectItem>
-                    <SelectItem value="MH-43-BP-8890 (Eicher 3015)">MH-43-BP-8890 (8.5T)</SelectItem>
-                    <SelectItem value="MH-03-CP-1204 (Tata Ace)">MH-03-CP-1204 (1.2T)</SelectItem>
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => setFormData({ ...formData, vehicle_reg: e.target.value })}
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-semibold">Assigned Driver</Label>
-                <Select
+                <Label className="text-xs font-semibold">Assigned Driver *</Label>
+                <Input
+                  required
+                  placeholder="e.g. Driver Name"
                   value={formData.driver_name}
-                  onValueChange={(val) => setFormData({ ...formData, driver_name: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Ramesh Yadav">Ramesh Yadav</SelectItem>
-                    <SelectItem value="Santosh Patil">Santosh Patil</SelectItem>
-                    <SelectItem value="Mohammad Irfan">Mohammad Irfan</SelectItem>
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => setFormData({ ...formData, driver_name: e.target.value })}
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Total Cargo Weight (KG)</Label>

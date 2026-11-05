@@ -45,31 +45,31 @@ import Link from 'next/link'
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
-  // Operational metrics
+  // Operational metrics - initialized to zero for live business tracking
   const [metrics, setMetrics] = useState({
-    goodsReceivedToday: 18,
-    goodsAwaitingVerification: 3,
-    goodsAvailableDispatch: 12,
-    goodsInWarehouse: 45,
-    dispatchesToday: 6,
-    deliveriesScheduled: 14,
-    completedDeliveries: 9,
-    pendingDeliveries: 4,
-    failedDeliveries: 1,
-    trucksOnRoad: 5,
-    availableVehicles: 7,
-    activeDrivers: 8,
-    activeLabourers: 15,
-    staffPresentToday: 21,
-    staffAbsentToday: 2,
-    loadingInProgress: 2,
-    unloadingInProgress: 1,
-    totalRevenueMonth: 540000,
-    totalExpensesMonth: 310000,
-    estimatedProfit: 230000,
-    customerOutstanding: 142500,
-    driverPaymentsDue: 48000,
-    advancesThisMonth: 32000,
+    goodsReceivedToday: 0,
+    goodsAwaitingVerification: 0,
+    goodsAvailableDispatch: 0,
+    goodsInWarehouse: 0,
+    dispatchesToday: 0,
+    deliveriesScheduled: 0,
+    completedDeliveries: 0,
+    pendingDeliveries: 0,
+    failedDeliveries: 0,
+    trucksOnRoad: 0,
+    availableVehicles: 0,
+    activeDrivers: 0,
+    activeLabourers: 0,
+    staffPresentToday: 0,
+    staffAbsentToday: 0,
+    loadingInProgress: 0,
+    unloadingInProgress: 0,
+    totalRevenueMonth: 0,
+    totalExpensesMonth: 0,
+    estimatedProfit: 0,
+    customerOutstanding: 0,
+    driverPaymentsDue: 0,
+    advancesThisMonth: 0,
   })
 
   const [recentArrivals, setRecentArrivals] = useState<any[]>([])
@@ -136,97 +136,35 @@ export default function DashboardPage() {
           })
         }
 
-        setMetrics(prev => ({
-          ...prev,
-          goodsInWarehouse: goodsCount ?? prev.goodsInWarehouse,
-          goodsReceivedToday: receiptsData?.length ?? prev.goodsReceivedToday,
-          dispatchesToday: dispatchCount ?? prev.dispatchesToday,
-          availableVehicles: vehicleCount ?? prev.availableVehicles,
-          activeDrivers: driverCount ?? prev.activeDrivers,
-          activeLabourers: staffCount ?? prev.activeLabourers,
-          completedDeliveries: deliveriesData && deliveriesData.length > 0 ? completedDel : prev.completedDeliveries,
-          pendingDeliveries: deliveriesData && deliveriesData.length > 0 ? pendingDel : prev.pendingDeliveries,
-          failedDeliveries: deliveriesData && deliveriesData.length > 0 ? failedDel : prev.failedDeliveries,
-          totalRevenueMonth: totalRevenue > 0 ? totalRevenue : prev.totalRevenueMonth,
-          totalExpensesMonth: totalExpenses > 0 ? totalExpenses : prev.totalExpensesMonth,
-          estimatedProfit: totalRevenue > 0 ? (totalRevenue - totalExpenses) : prev.estimatedProfit,
-          customerOutstanding: totalOutstanding > 0 ? totalOutstanding : prev.customerOutstanding,
-        }))
+        setMetrics({
+          goodsInWarehouse: goodsCount || 0,
+          goodsReceivedToday: receiptsData?.length || 0,
+          goodsAwaitingVerification: 0,
+          goodsAvailableDispatch: goodsCount || 0,
+          dispatchesToday: dispatchCount || 0,
+          deliveriesScheduled: deliveriesData?.length || 0,
+          completedDeliveries: completedDel,
+          pendingDeliveries: pendingDel,
+          failedDeliveries: failedDel,
+          trucksOnRoad: dispatchCount || 0,
+          availableVehicles: vehicleCount || 0,
+          activeDrivers: driverCount || 0,
+          activeLabourers: staffCount || 0,
+          staffPresentToday: staffCount || 0,
+          staffAbsentToday: 0,
+          loadingInProgress: 0,
+          unloadingInProgress: 0,
+          totalRevenueMonth: totalRevenue,
+          totalExpensesMonth: totalExpenses,
+          estimatedProfit: totalRevenue - totalExpenses,
+          customerOutstanding: totalOutstanding,
+          driverPaymentsDue: 0,
+          advancesThisMonth: 0,
+        })
 
-        if (receiptsData && receiptsData.length > 0) {
-          setRecentArrivals(receiptsData)
-        } else {
-          // Default realistic preview data
-          setRecentArrivals([
-            {
-              id: '1',
-              invoice_number: 'INV-2026-0891',
-              consignor: 'Parle Agro Industries',
-              product_name: 'Frooti 200ml Tetra Pack (450 Cartons)',
-              delivery_city: 'Bhiwandi',
-              status: 'available',
-              received_at: 'Today, 08:30 AM',
-            },
-            {
-              id: '2',
-              invoice_number: 'INV-2026-0892',
-              consignor: 'Godrej Consumer Products',
-              product_name: 'Cinthol Soap Cartons (200 Pkgs)',
-              delivery_city: 'Thane',
-              status: 'verification_pending',
-              received_at: 'Today, 10:15 AM',
-            },
-            {
-              id: '3',
-              invoice_number: 'INV-2026-0893',
-              consignor: 'Asian Paints Ltd',
-              product_name: 'Royale Emulsion 20L (120 Buckets)',
-              delivery_city: 'Pune MIDC',
-              status: 'verification_pending',
-              received_at: 'Today, 11:45 AM',
-            },
-          ])
-        }
-
-        if (dispatchesData && dispatchesData.length > 0) {
-          setRecentDispatches(dispatchesData)
-        } else {
-          setRecentDispatches([
-            {
-              id: 'd1',
-              dispatch_number: 'DSP-2026-0041',
-              vehicle_reg: 'MH-04-GP-4521',
-              driver_name: 'Ramesh Yadav',
-              stops: 3,
-              status: 'in_transit',
-              planned_distance: '65 km',
-            },
-            {
-              id: 'd2',
-              dispatch_number: 'DSP-2026-0042',
-              vehicle_reg: 'MH-43-BP-8890',
-              driver_name: 'Santosh Patil',
-              stops: 2,
-              status: 'planned',
-              planned_distance: '45 km',
-            },
-            {
-              id: 'd3',
-              dispatch_number: 'DSP-2026-0043',
-              vehicle_reg: 'MH-03-CP-1204',
-              driver_name: 'Mohammad Irfan',
-              stops: 1,
-              status: 'completed',
-              planned_distance: '32 km',
-            },
-          ])
-        }
-
-        setExpiringDocs([
-          { entity: 'MH-46-AR-3312', type: 'PUC Certificate', expiry: '20-Nov-2026', days: 22, severity: 'warning' },
-          { entity: 'MH-43-BP-8890', type: 'Fitness Certificate', expiry: '05-Dec-2026', days: 37, severity: 'info' },
-          { entity: 'Mohammad Irfan', type: 'Licence Verification', expiry: '10-Jan-2027', days: 73, severity: 'info' },
-        ])
+        setRecentArrivals(receiptsData || [])
+        setRecentDispatches(dispatchesData || [])
+        setExpiringDocs([])
       } catch (err) {
         console.error('Failed to load real database metrics:', err)
       } finally {

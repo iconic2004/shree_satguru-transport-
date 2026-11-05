@@ -42,37 +42,11 @@ export default function CompaniesPage() {
       if (data && data.length > 0) {
         setCompanies(data)
       } else {
-        setCompanies([
-          {
-            id: 'c1',
-            name: 'Parle Agro Industries Ltd',
-            company_type: 'client',
-            contact_person: 'Rajesh Sharma',
-            phone: '+91 98201 12345',
-            email: 'logistics@parleagro.com',
-            city: 'Mumbai',
-            gstin: '27AAACP1234A1Z5',
-            billing_terms: '30 Days Net',
-            credit_limit: 500000,
-            is_active: true,
-          },
-          {
-            id: 'c2',
-            name: 'Godrej Consumer Products',
-            company_type: 'consignor',
-            contact_person: 'Anand Kulkarni',
-            phone: '+91 98199 54321',
-            email: 'supplychain@godrej.com',
-            city: 'Mumbai',
-            gstin: '27AAACG5678B2Z1',
-            billing_terms: '15 Days Net',
-            credit_limit: 350000,
-            is_active: true,
-          },
-        ])
+        setCompanies([])
       }
     } catch (err) {
       console.error(err)
+      setCompanies([])
     } finally {
       setLoading(false)
     }
@@ -89,10 +63,10 @@ export default function CompaniesPage() {
     contact_person: '',
     phone: '',
     email: '',
-    city: 'Mumbai',
+    city: '',
     gstin: '',
     billing_terms: '30 Days Net',
-    credit_limit: '200000',
+    credit_limit: '0',
   })
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -222,7 +196,7 @@ export default function CompaniesPage() {
               <Label className="text-xs font-semibold">Company Name *</Label>
               <Input
                 required
-                placeholder="e.g. Parle Agro Industries Ltd"
+                placeholder="e.g. Acme Enterprise Pvt Ltd"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />

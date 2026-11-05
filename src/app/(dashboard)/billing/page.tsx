@@ -47,41 +47,11 @@ export default function BillingPage() {
           client_name: inv.companies?.name || inv.customers?.name || 'Client',
         })))
       } else {
-        setInvoices([
-          {
-            id: 'inv-1',
-            invoice_number: 'SST-INV-2026-101',
-            client_name: 'Parle Agro Industries Ltd',
-            billing_month: 'September 2026',
-            invoice_date: '2026-10-01',
-            due_date: '2026-10-31',
-            subtotal: 85000,
-            tax_amount: 15300,
-            tds_amount: 1700,
-            total_amount: 100300,
-            paid_amount: 50000,
-            outstanding_amount: 50300,
-            status: 'partially_paid',
-          },
-          {
-            id: 'inv-2',
-            invoice_number: 'SST-INV-2026-102',
-            client_name: 'Godrej Consumer Products',
-            billing_month: 'September 2026',
-            invoice_date: '2026-10-05',
-            due_date: '2026-10-20',
-            subtotal: 42000,
-            tax_amount: 7560,
-            tds_amount: 840,
-            total_amount: 49560,
-            paid_amount: 49560,
-            outstanding_amount: 0,
-            status: 'paid',
-          },
-        ])
+        setInvoices([])
       }
     } catch (err) {
       console.error(err)
+      setInvoices([])
     } finally {
       setLoading(false)
     }
@@ -93,10 +63,10 @@ export default function BillingPage() {
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    invoice_number: `SST-INV-2026-105`,
-    client_name: 'Parle Agro Industries Ltd',
-    billing_month: 'October 2026',
-    subtotal: '60000',
+    invoice_number: '',
+    client_name: '',
+    billing_month: '',
+    subtotal: '',
     tax_rate: '18',
   })
 
@@ -310,20 +280,13 @@ export default function BillingPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Customer Corporation</Label>
-              <Select
+              <Label className="text-xs font-semibold">Customer Corporation / Client Name</Label>
+              <Input
+                placeholder="Enter client or company name"
                 value={formData.client_name}
-                onValueChange={(val) => setFormData({ ...formData, client_name: val })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Parle Agro Industries Ltd">Parle Agro Industries Ltd</SelectItem>
-                  <SelectItem value="Godrej Consumer Products">Godrej Consumer Products</SelectItem>
-                  <SelectItem value="Asian Paints Ltd">Asian Paints Ltd</SelectItem>
-                </SelectContent>
-              </Select>
+                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
+                required
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

@@ -56,57 +56,10 @@ export default function GoodsPage() {
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (data && data.length > 0) {
+      if (data) {
         setGoods(data)
       } else {
-        // Sample realistic goods for initial display
-        setGoods([
-          {
-            id: '1',
-            invoice_number: 'INV-2026-0891',
-            challan_number: 'CH-5541',
-            consignor_name: 'Parle Agro Industries Ltd',
-            consignee_name: 'Reliance Retail Central DC',
-            product_name: 'Frooti 200ml Tetra Pack',
-            quantity: 450,
-            unit: 'cartons',
-            weight_kg: 4950,
-            delivery_city: 'Bhiwandi',
-            priority: 'normal',
-            status: 'available',
-            created_at: new Date().toISOString(),
-          },
-          {
-            id: '2',
-            invoice_number: 'INV-2026-0892',
-            challan_number: 'CH-5542',
-            consignor_name: 'Godrej Consumer Products',
-            consignee_name: 'DMart DC Thane',
-            product_name: 'Cinthol Soap Cartons',
-            quantity: 200,
-            unit: 'cartons',
-            weight_kg: 2400,
-            delivery_city: 'Thane',
-            priority: 'high',
-            status: 'verification_pending',
-            created_at: new Date().toISOString(),
-          },
-          {
-            id: '3',
-            invoice_number: 'INV-2026-0893',
-            challan_number: 'CH-5543',
-            consignor_name: 'Asian Paints Ltd',
-            consignee_name: 'Apex Hardware & Paints',
-            product_name: 'Royale Luxury Emulsion 20L',
-            quantity: 120,
-            unit: 'buckets',
-            weight_kg: 3120,
-            delivery_city: 'Pune',
-            priority: 'urgent',
-            status: 'available',
-            created_at: new Date().toISOString(),
-          },
-        ])
+        setGoods([])
       }
     } catch (err) {
       console.error(err)
@@ -378,7 +331,7 @@ export default function GoodsPage() {
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Consignor (Sender Company)</Label>
                 <Input
-                  placeholder="e.g. Parle Agro Industries"
+                  placeholder="e.g. Consignor Enterprise"
                   value={formData.consignor_name}
                   onChange={(e) => setFormData({ ...formData, consignor_name: e.target.value })}
                 />
@@ -398,7 +351,7 @@ export default function GoodsPage() {
                 <Label className="text-xs font-semibold">Product Name & Description *</Label>
                 <Input
                   required
-                  placeholder="e.g. Frooti Mango Drink 200ml"
+                  placeholder="e.g. Packaged Consumer Goods"
                   value={formData.product_name}
                   onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
                 />

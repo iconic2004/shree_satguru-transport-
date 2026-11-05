@@ -48,45 +48,7 @@ export default function DeliveriesPage() {
           pod_submitted: d.status === 'delivered',
         })))
       } else {
-        setDeliveries([
-          {
-            id: 'del-1',
-            dispatch_no: 'DSP-2026-0041',
-            customer_name: 'Reliance Retail Central DC',
-            destination: 'Poman Industrial Hub, Bhiwandi',
-            driver_name: 'Ramesh Yadav',
-            vehicle_reg: 'MH-04-GP-4521',
-            cargo: 'Frooti 200ml (450 Cartons)',
-            receiver_name: 'Praveen Mehta (Store Mgr)',
-            status: 'delivered',
-            pod_submitted: true,
-          },
-          {
-            id: 'del-2',
-            dispatch_no: 'DSP-2026-0041',
-            customer_name: 'DMart DC Thane',
-            destination: 'Ghodbunder Road, Thane',
-            driver_name: 'Ramesh Yadav',
-            vehicle_reg: 'MH-04-GP-4521',
-            cargo: 'Cinthol Soap (200 Cartons)',
-            receiver_name: '-',
-            status: 'in_transit',
-            pod_submitted: false,
-          },
-          {
-            id: 'del-3',
-            dispatch_no: 'DSP-2026-0040',
-            customer_name: 'Apex Paints & Hardware',
-            destination: 'Bhosari MIDC, Pune',
-            driver_name: 'Santosh Patil',
-            vehicle_reg: 'MH-43-BP-8890',
-            cargo: 'Royale Luxury Emulsion (120 Buckets)',
-            receiver_name: 'Receiver Unavailable',
-            status: 'failed',
-            failure_reason: 'Gate closed due to union bandh; rescheduled for tomorrow',
-            pod_submitted: false,
-          },
-        ])
+        setDeliveries([])
       }
     } catch (err) {
       console.error(err)

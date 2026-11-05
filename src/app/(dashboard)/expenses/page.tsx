@@ -47,28 +47,7 @@ export default function ExpensesPage() {
           vehicle_reg: e.vehicles?.registration_number || 'General Godown',
         })))
       } else {
-        setExpenses([
-          {
-            id: 'exp-1',
-            expense_date: '2026-10-28',
-            category: 'diesel_fuel',
-            amount: 8500,
-            payment_method: 'upi',
-            vendor: 'Indian Oil Corporation, Bhiwandi',
-            vehicle_reg: 'MH-04-GP-4521',
-            description: 'Diesel 92 Litres for Tata 1613',
-          },
-          {
-            id: 'exp-2',
-            expense_date: '2026-10-27',
-            category: 'toll',
-            amount: 680,
-            payment_method: 'upi',
-            vendor: 'Fastag Toll Plaza',
-            vehicle_reg: 'MH-04-GP-4521',
-            description: 'Mumbai-Pune Expressway Toll',
-          },
-        ])
+        setExpenses([])
       }
     } catch (err) {
       console.error(err)
@@ -286,7 +265,7 @@ export default function ExpensesPage() {
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Related Vehicle</Label>
                 <Input
-                  placeholder="MH-04-GP-4521"
+                  placeholder="e.g. MH-04-AB-1234"
                   value={formData.vehicle_reg}
                   onChange={(e) => setFormData({ ...formData, vehicle_reg: e.target.value })}
                 />

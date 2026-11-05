@@ -29,66 +29,24 @@ export default function LoadingUnloadingPage() {
           data.map((op: any) => ({
             id: op.id,
             operation_type: op.operation_type,
-            vehicle_reg: op.vehicles?.registration_number || 'MH-04-GP-4521',
+            vehicle_reg: op.vehicles?.registration_number || 'N/A',
             driver_name: op.drivers?.full_name || 'Fleet Driver',
-            labourers: 'Baban Kamble, Sunil Pawar',
-            dispatch_no: op.dispatches?.dispatch_number || 'DSP-2026-0041',
-            cargo_desc: op.remarks || 'Standard FMCG Consignment',
-            expected_qty: 450,
-            actual_qty: 450,
+            labourers: op.laborers || 'Assigned Staff',
+            dispatch_no: op.dispatches?.dispatch_number || 'N/A',
+            cargo_desc: op.remarks || 'Consignment',
+            expected_qty: op.expected_qty || 0,
+            actual_qty: op.actual_qty || 0,
             status: op.status,
-            start_time: op.start_time || '08:30 AM',
-            responsible_employee: 'Godown Supervisor Sharma',
+            start_time: op.start_time || 'N/A',
+            responsible_employee: op.responsible_person || 'Supervisor',
           }))
         )
       } else {
-        setOperations([
-          {
-            id: 'op-1',
-            operation_type: 'loading',
-            vehicle_reg: 'MH-04-GP-4521',
-            driver_name: 'Ramesh Yadav',
-            labourers: 'Baban Kamble, Sunil Pawar',
-            dispatch_no: 'DSP-2026-0041',
-            cargo_desc: 'Frooti 200ml (450 cartons)',
-            expected_qty: 450,
-            actual_qty: 450,
-            status: 'in_progress',
-            start_time: '08:30 AM',
-            responsible_employee: 'Godown Supervisor Sharma',
-          },
-          {
-            id: 'op-2',
-            operation_type: 'unloading',
-            vehicle_reg: 'MH-43-BP-8890',
-            driver_name: 'Santosh Patil',
-            labourers: 'Deepak More, Vijay Jadhav',
-            dispatch_no: 'Incoming Challan CH-5542',
-            cargo_desc: 'Cinthol Soap (200 cartons)',
-            expected_qty: 200,
-            actual_qty: 198,
-            status: 'completed',
-            start_time: '10:00 AM',
-            responsible_employee: 'Godown Supervisor Sharma',
-          },
-          {
-            id: 'op-3',
-            operation_type: 'loading',
-            vehicle_reg: 'MH-03-CP-1204',
-            driver_name: 'Mohammad Irfan',
-            labourers: 'Baban Kamble',
-            dispatch_no: 'DSP-2026-0043',
-            cargo_desc: 'Apex Hardware Supplies (60 boxes)',
-            expected_qty: 60,
-            actual_qty: 60,
-            status: 'verified',
-            start_time: '07:15 AM',
-            responsible_employee: 'Deshmukh (Shift Lead)',
-          },
-        ])
+        setOperations([])
       }
     } catch (err) {
       console.error('Failed to load loading operations:', err)
+      setOperations([])
     } finally {
       setLoading(false)
     }

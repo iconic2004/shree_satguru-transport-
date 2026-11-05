@@ -29,63 +29,24 @@ export default function WarehousePage() {
         setInventory(
           data.map((item: any) => ({
             id: item.id,
-            warehouse_name: item.warehouses?.name || 'Bhiwandi Central Godown',
+            warehouse_name: item.warehouses?.name || 'Central Godown',
             bay_name: item.warehouse_locations?.name || 'General Storage Bay',
             product_name: item.product_name,
-            expected_qty: item.declared_quantity || item.package_count || 100,
-            actual_qty: item.actual_quantity || item.package_count || 100,
+            expected_qty: item.declared_quantity || item.package_count || 0,
+            actual_qty: item.actual_quantity || item.package_count || 0,
             damaged_qty: item.damaged_quantity || 0,
-            available_qty: (item.actual_quantity || item.package_count || 100) - (item.damaged_quantity || 0),
-            unit: item.package_type || 'cartons',
+            available_qty: (item.actual_quantity || item.package_count || 0) - (item.damaged_quantity || 0),
+            unit: item.package_type || 'units',
             status: item.status === 'verification_pending' ? 'verification_pending' : 'verified',
             aging_days: Math.floor((Date.now() - new Date(item.created_at || Date.now()).getTime()) / 86400000),
           }))
         )
       } else {
-        setInventory([
-          {
-            id: 'w1',
-            warehouse_name: 'Bhiwandi Central Godown',
-            bay_name: 'Bay A-1 (FMCG)',
-            product_name: 'Frooti 200ml Tetra Pack',
-            expected_qty: 450,
-            actual_qty: 450,
-            damaged_qty: 0,
-            available_qty: 450,
-            unit: 'cartons',
-            status: 'verified',
-            aging_days: 2,
-          },
-          {
-            id: 'w2',
-            warehouse_name: 'Bhiwandi Central Godown',
-            bay_name: 'Bay B-2 (Heavy Goods)',
-            product_name: 'Cinthol Soap Cartons',
-            expected_qty: 200,
-            actual_qty: 198,
-            damaged_qty: 2,
-            available_qty: 198,
-            unit: 'cartons',
-            status: 'discrepancy_resolved',
-            aging_days: 1,
-          },
-          {
-            id: 'w3',
-            warehouse_name: 'Vashi Hub & Logistics',
-            bay_name: 'Vashi Cold Bay 1',
-            product_name: 'Royale Luxury Emulsion 20L',
-            expected_qty: 120,
-            actual_qty: 120,
-            damaged_qty: 0,
-            available_qty: 120,
-            unit: 'buckets',
-            status: 'verification_pending',
-            aging_days: 0,
-          },
-        ])
+        setInventory([])
       }
     } catch (err: any) {
       console.error('Failed to load warehouse stock:', err)
+      setInventory([])
     } finally {
       setLoading(false)
     }

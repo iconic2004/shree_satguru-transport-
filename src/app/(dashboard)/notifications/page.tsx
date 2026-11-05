@@ -34,43 +34,11 @@ export default function NotificationsPage() {
           }))
         )
       } else {
-        setNotifications([
-          {
-            id: '1',
-            title: 'Vehicle Fitness Certificate Expiring Soon',
-            message: 'Fitness certificate for MH-43-BP-8890 expires in 37 days on 05-Dec-2026. Schedule RTO inspection.',
-            type: 'warning',
-            is_read: false,
-            time: '10 mins ago',
-          },
-          {
-            id: '2',
-            title: 'New Goods Consignment Inward',
-            message: 'Challan CH-5543 from Asian Paints (120 buckets) arrived at Vashi Godown. Awaiting physical verification.',
-            type: 'dispatch',
-            is_read: false,
-            time: '1 hour ago',
-          },
-          {
-            id: '3',
-            title: 'Failed Delivery Stop Alert',
-            message: 'Driver Santosh Patil marked delivery at Apex Paints Pune as Failed (Gate closed). Redelivery pending.',
-            type: 'error',
-            is_read: false,
-            time: '3 hours ago',
-          },
-          {
-            id: '4',
-            title: 'Customer Payment Remitted',
-            message: '₹49,560 received via RTGS from Godrej Consumer Products and cleared against SST-INV-2026-102.',
-            type: 'success',
-            is_read: true,
-            time: 'Yesterday',
-          },
-        ])
+        setNotifications([])
       }
     } catch (err) {
       console.error('Failed to load notifications:', err)
+      setNotifications([])
     } finally {
       setLoading(false)
     }

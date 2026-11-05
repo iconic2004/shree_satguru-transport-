@@ -58,47 +58,11 @@ export default function StaffAdvancesPage() {
           }))
         )
       } else {
-        setAdvances([
-          {
-            id: 'adv-1',
-            staff_name: 'Ramesh Yadav',
-            staff_type: 'driver',
-            date: '2026-10-18',
-            amount: 5000,
-            applied_amount: 5000,
-            remaining_amount: 0,
-            payment_method: 'upi',
-            reason: 'Diwali family advance',
-            status: 'fully_applied',
-          },
-          {
-            id: 'adv-2',
-            staff_name: 'Baban Kamble',
-            staff_type: 'labourer',
-            date: '2026-10-22',
-            amount: 2000,
-            applied_amount: 1000,
-            remaining_amount: 1000,
-            payment_method: 'cash',
-            reason: 'Medical expense assistance',
-            status: 'partially_applied',
-          },
-          {
-            id: 'adv-3',
-            staff_name: 'Santosh Patil',
-            staff_type: 'driver',
-            date: '2026-10-25',
-            amount: 4000,
-            applied_amount: 0,
-            remaining_amount: 4000,
-            payment_method: 'bank_transfer',
-            reason: 'Route emergency advance',
-            status: 'unapplied',
-          },
-        ])
+        setAdvances([])
       }
     } catch (err: any) {
       console.error('Failed to load advances:', err)
+      setAdvances([])
     } finally {
       setLoading(false)
     }
@@ -110,11 +74,11 @@ export default function StaffAdvancesPage() {
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
-    staff_name: 'Ramesh Yadav',
+    staff_name: '',
     staff_type: 'driver',
-    amount: '3000',
+    amount: '',
     payment_method: 'cash',
-    reason: 'Emergency travel advance',
+    reason: '',
     reference: '',
   })
 

@@ -38,22 +38,11 @@ export default function CustomersPage() {
           company_name: c.companies?.name || 'Direct Client',
         })))
       } else {
-        setCustomers([
-          {
-            id: 'cust-1',
-            name: 'Reliance Retail Central Warehouse',
-            company_name: 'Parle Agro Industries Ltd',
-            contact_person: 'Praveen Mehta',
-            phone: '+91 99200 11223',
-            city: 'Bhiwandi',
-            area: 'Poman Industrial Hub',
-            pin_code: '421302',
-            credit_limit: 300000,
-          },
-        ])
+        setCustomers([])
       }
     } catch (err) {
       console.error(err)
+      setCustomers([])
     } finally {
       setLoading(false)
     }
@@ -71,7 +60,7 @@ export default function CustomersPage() {
     city: '',
     area: '',
     pin_code: '',
-    credit_limit: '150000',
+    credit_limit: '0',
   })
 
   const handleCreate = async (e: React.FormEvent) => {

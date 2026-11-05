@@ -47,50 +47,7 @@ export default function VehiclesPage() {
           assigned_driver: 'Assigned Driver',
         })))
       } else {
-        setVehicles([
-          {
-            id: 'v1',
-            registration_number: 'MH-04-GP-4521',
-            vehicle_type: 'truck',
-            make_model: 'Tata Motors LPT 1613',
-            cargo_capacity_kg: 9500,
-            fuel_type: 'diesel',
-            current_odometer: 74520,
-            insurance_expiry: '2027-04-15',
-            fitness_expiry: '2027-03-20',
-            puc_expiry: '2027-01-10',
-            assigned_driver: 'Ramesh Yadav',
-            status: 'available',
-          },
-          {
-            id: 'v2',
-            registration_number: 'MH-43-BP-8890',
-            vehicle_type: 'truck',
-            make_model: 'Eicher Pro 3015',
-            cargo_capacity_kg: 8500,
-            fuel_type: 'diesel',
-            current_odometer: 48210,
-            insurance_expiry: '2027-06-10',
-            fitness_expiry: '2026-12-05',
-            puc_expiry: '2026-12-05',
-            assigned_driver: 'Santosh Patil',
-            status: 'available',
-          },
-          {
-            id: 'v3',
-            registration_number: 'MH-03-CP-1204',
-            vehicle_type: 'tempo',
-            make_model: 'Tata Ace Gold',
-            cargo_capacity_kg: 1200,
-            fuel_type: 'cng',
-            current_odometer: 31200,
-            insurance_expiry: '2027-02-28',
-            fitness_expiry: '2027-02-15',
-            puc_expiry: '2027-03-01',
-            assigned_driver: 'Mohammad Irfan',
-            status: 'available',
-          },
-        ])
+        setVehicles([])
       }
     } catch (err) {
       console.error(err)
