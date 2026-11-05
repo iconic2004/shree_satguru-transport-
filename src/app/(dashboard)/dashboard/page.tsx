@@ -81,32 +81,77 @@ export default function DashboardPage() {
       try {
         const supabase = createClient()
 
-        // Fetch counts from real database
+        // Fetch counts and aggregations from real database
         const [
           { count: goodsCount },
           { count: dispatchCount },
           { count: vehicleCount },
           { count: driverCount },
+          { count: staffCount },
           { data: receiptsData },
           { data: dispatchesData },
+          { data: invoicesData },
+          { data: expensesData },
+          { data: deliveriesData },
         ] = await Promise.all([
           supabase.from('goods_receipts').select('*', { count: 'exact', head: true }),
           supabase.from('dispatches').select('*', { count: 'exact', head: true }),
           supabase.from('vehicles').select('*', { count: 'exact', head: true }),
           supabase.from('drivers').select('*', { count: 'exact', head: true }),
+          supabase.from('staff_members').select('*', { count: 'exact', head: true }),
           supabase.from('goods_receipts').select('*').order('created_at', { ascending: false }).limit(5),
           supabase.from('dispatches').select('*, vehicles(registration_number), drivers(full_name)').order('created_at', { ascending: false }).limit(5),
+          supabase.from('invoices').select('total_amount, paid_amount, outstanding_amount, status'),
+          supabase.from('expenses').select('amount, category'),
+          supabase.from('deliveries').select('status'),
         ])
 
-        if (goodsCount != null && goodsCount > 0) {
-          setMetrics(prev => ({
-            ...prev,
-            goodsInWarehouse: goodsCount,
-            dispatchesToday: dispatchCount || prev.dispatchesToday,
-            availableVehicles: vehicleCount || prev.availableVehicles,
-            activeDrivers: driverCount || prev.activeDrivers,
-          }))
+        // Compute financial metrics from real database
+        let totalRevenue = 0
+        let totalPaid = 0
+        let totalOutstanding = 0
+        if (invoicesData && invoicesData.length > 0) {
+          invoicesData.forEach((inv: any) => {
+            totalRevenue += Number(inv.total_amount) || 0
+            totalPaid += Number(inv.paid_amount) || 0
+            totalOutstanding += Number(inv.outstanding_amount) || 0
+          })
         }
+
+        let totalExpenses = 0
+        if (expensesData && expensesData.length > 0) {
+          expensesData.forEach((exp: any) => {
+            totalExpenses += Number(exp.amount) || 0
+          })
+        }
+
+        let completedDel = 0
+        let pendingDel = 0
+        let failedDel = 0
+        if (deliveriesData && deliveriesData.length > 0) {
+          deliveriesData.forEach((del: any) => {
+            if (del.status === 'delivered') completedDel++
+            else if (del.status === 'failed') failedDel++
+            else pendingDel++
+          })
+        }
+
+        setMetrics(prev => ({
+          ...prev,
+          goodsInWarehouse: goodsCount ?? prev.goodsInWarehouse,
+          goodsReceivedToday: receiptsData?.length ?? prev.goodsReceivedToday,
+          dispatchesToday: dispatchCount ?? prev.dispatchesToday,
+          availableVehicles: vehicleCount ?? prev.availableVehicles,
+          activeDrivers: driverCount ?? prev.activeDrivers,
+          activeLabourers: staffCount ?? prev.activeLabourers,
+          completedDeliveries: deliveriesData && deliveriesData.length > 0 ? completedDel : prev.completedDeliveries,
+          pendingDeliveries: deliveriesData && deliveriesData.length > 0 ? pendingDel : prev.pendingDeliveries,
+          failedDeliveries: deliveriesData && deliveriesData.length > 0 ? failedDel : prev.failedDeliveries,
+          totalRevenueMonth: totalRevenue > 0 ? totalRevenue : prev.totalRevenueMonth,
+          totalExpensesMonth: totalExpenses > 0 ? totalExpenses : prev.totalExpensesMonth,
+          estimatedProfit: totalRevenue > 0 ? (totalRevenue - totalExpenses) : prev.estimatedProfit,
+          customerOutstanding: totalOutstanding > 0 ? totalOutstanding : prev.customerOutstanding,
+        }))
 
         if (receiptsData && receiptsData.length > 0) {
           setRecentArrivals(receiptsData)

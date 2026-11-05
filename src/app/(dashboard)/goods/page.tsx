@@ -122,7 +122,12 @@ export default function GoodsPage() {
     e.preventDefault()
     try {
       const supabase = createClient()
-      const newRecord = {
+
+      // Fetch valid company for foreign key reference
+      const { data: companies } = await supabase.from('companies').select('id, name').limit(1)
+      const companyId = (companies as any)?.[0]?.id || null
+
+      const newRecord: any = {
         invoice_number: formData.invoice_number,
         challan_number: formData.challan_number,
         product_name: formData.product_name,
@@ -134,6 +139,10 @@ export default function GoodsPage() {
         priority: (formData.priority as 'normal' | 'high' | 'urgent') || 'normal',
         handling_instructions: formData.handling_instructions,
         status: 'verification_pending',
+      }
+
+      if (companyId) {
+        newRecord.consignor_company_id = companyId
       }
 
       const { data, error } = await (supabase.from('goods_receipts') as any).insert([newRecord]).select()

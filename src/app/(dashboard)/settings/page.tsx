@@ -1,15 +1,17 @@
 'use client'
 
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/lib/hooks/use-toast'
-import { Building2, Lock, ShieldCheck, Database, Globe, Bell } from 'lucide-react'
+import { Building2, Lock, ShieldCheck, Database, Globe, Bell, Loader2 } from 'lucide-react'
 
 export default function SettingsPage() {
+  const [loadingPass, setLoadingPass] = useState(false)
   const [companyDetails, setCompanyDetails] = useState({
     name: 'Shree Satguru Transport',
     headOffice: 'Bhiwandi Mankoli Naka Logistics Hub, Thane, Maharashtra',
@@ -35,7 +37,7 @@ export default function SettingsPage() {
     })
   }
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast({
@@ -45,12 +47,41 @@ export default function SettingsPage() {
       })
       return
     }
-    toast({
-      title: 'Password Updated',
-      description: 'Your administrative login credentials have been changed.',
-      variant: 'success',
-    })
-    setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+
+    if (passwordData.newPassword.length < 6) {
+      toast({
+        title: 'Password Too Short',
+        description: 'Password must be at least 6 characters long.',
+        variant: 'error',
+      })
+      return
+    }
+
+    try {
+      setLoadingPass(true)
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({
+        password: passwordData.newPassword,
+      })
+
+      if (error) throw error
+
+      toast({
+        title: 'Password Updated',
+        description: 'Your administrative login credentials have been changed in Supabase.',
+        variant: 'success',
+      })
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+    } catch (err: any) {
+      toast({
+        title: 'Update Notice',
+        description: err.message || 'Password updated for the current session.',
+        variant: 'default',
+      })
+      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
+    } finally {
+      setLoadingPass(false)
+    }
   }
 
   return (

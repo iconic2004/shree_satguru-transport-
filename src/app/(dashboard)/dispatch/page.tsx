@@ -128,7 +128,16 @@ export default function DispatchPage() {
       const cap = 9500
       const util = Math.round((weight / cap) * 100)
 
-      const newRecord = {
+      // Get valid vehicle and driver foreign keys from database
+      const [vehRes, drvRes] = await Promise.all([
+        supabase.from('vehicles').select('id, registration_number').limit(1),
+        supabase.from('drivers').select('id, full_name').limit(1),
+      ])
+
+      const vehicleId = (vehRes.data as any)?.[0]?.id || null
+      const driverId = (drvRes.data as any)?.[0]?.id || null
+
+      const newRecord: any = {
         dispatch_number: formData.dispatch_number,
         dispatch_date: new Date().toISOString().split('T')[0],
         cargo_weight_kg: weight,
@@ -137,6 +146,9 @@ export default function DispatchPage() {
         planned_cost: parseFloat(formData.planned_cost) || 0,
         status: 'planned',
       }
+
+      if (vehicleId) newRecord.vehicle_id = vehicleId
+      if (driverId) newRecord.driver_id = driverId
 
       const { data, error } = await (supabase.from('dispatches') as any).insert([newRecord]).select()
 

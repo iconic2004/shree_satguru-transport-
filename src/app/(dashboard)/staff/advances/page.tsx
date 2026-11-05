@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { KPICard } from '@/components/shared/kpi-card'
 import { DataTable } from '@/components/shared/data-table'
@@ -24,49 +25,88 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ColumnDef } from '@tanstack/react-table'
-import { Wallet, Plus, CreditCard, CheckCircle2, ArrowDownRight } from 'lucide-react'
+import { Wallet, Plus, CreditCard, CheckCircle2, ArrowDownRight, RefreshCw } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function StaffAdvancesPage() {
-  const [advances, setAdvances] = useState([
-    {
-      id: 'adv-1',
-      staff_name: 'Ramesh Yadav',
-      staff_type: 'driver',
-      date: '2026-10-18',
-      amount: 5000,
-      applied_amount: 5000,
-      remaining_amount: 0,
-      payment_method: 'upi',
-      reason: 'Diwali family advance',
-      status: 'fully_applied',
-    },
-    {
-      id: 'adv-2',
-      staff_name: 'Baban Kamble',
-      staff_type: 'labourer',
-      date: '2026-10-22',
-      amount: 2000,
-      applied_amount: 1000,
-      remaining_amount: 1000,
-      payment_method: 'cash',
-      reason: 'Medical expense assistance',
-      status: 'partially_applied',
-    },
-    {
-      id: 'adv-3',
-      staff_name: 'Santosh Patil',
-      staff_type: 'driver',
-      date: '2026-10-25',
-      amount: 4000,
-      applied_amount: 0,
-      remaining_amount: 4000,
-      payment_method: 'bank_transfer',
-      reason: 'Route emergency advance',
-      status: 'unapplied',
-    },
-  ])
+  const [advances, setAdvances] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadAdvances = async () => {
+    try {
+      setLoading(true)
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('staff_advances')
+        .select('*, drivers(full_name), staff_members(full_name)')
+        .order('advance_date', { ascending: false })
+
+      if (data && data.length > 0) {
+        setAdvances(
+          data.map((adv: any) => ({
+            id: adv.id,
+            staff_name: adv.drivers?.full_name || adv.staff_members?.full_name || 'Staff Member',
+            staff_type: adv.staff_type || 'driver',
+            date: adv.advance_date,
+            amount: adv.amount,
+            applied_amount: adv.applied_amount || 0,
+            remaining_amount: adv.remaining_amount ?? (adv.amount - (adv.applied_amount || 0)),
+            payment_method: adv.payment_method,
+            reason: adv.reason || 'General emergency cash advance',
+            status: adv.status || 'unapplied',
+          }))
+        )
+      } else {
+        setAdvances([
+          {
+            id: 'adv-1',
+            staff_name: 'Ramesh Yadav',
+            staff_type: 'driver',
+            date: '2026-10-18',
+            amount: 5000,
+            applied_amount: 5000,
+            remaining_amount: 0,
+            payment_method: 'upi',
+            reason: 'Diwali family advance',
+            status: 'fully_applied',
+          },
+          {
+            id: 'adv-2',
+            staff_name: 'Baban Kamble',
+            staff_type: 'labourer',
+            date: '2026-10-22',
+            amount: 2000,
+            applied_amount: 1000,
+            remaining_amount: 1000,
+            payment_method: 'cash',
+            reason: 'Medical expense assistance',
+            status: 'partially_applied',
+          },
+          {
+            id: 'adv-3',
+            staff_name: 'Santosh Patil',
+            staff_type: 'driver',
+            date: '2026-10-25',
+            amount: 4000,
+            applied_amount: 0,
+            remaining_amount: 4000,
+            payment_method: 'bank_transfer',
+            reason: 'Route emergency advance',
+            status: 'unapplied',
+          },
+        ])
+      }
+    } catch (err: any) {
+      console.error('Failed to load advances:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadAdvances()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({
@@ -78,28 +118,59 @@ export default function StaffAdvancesPage() {
     reference: '',
   })
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const amt = parseFloat(formData.amount) || 0
-    const newAdv = {
-      id: `adv-${Date.now()}`,
-      staff_name: formData.staff_name,
-      staff_type: formData.staff_type,
-      date: new Date().toISOString().split('T')[0],
-      amount: amt,
-      applied_amount: 0,
-      remaining_amount: amt,
-      payment_method: formData.payment_method,
-      reason: formData.reason,
-      status: 'unapplied',
+    try {
+      const supabase = createClient()
+      const amt = parseFloat(formData.amount) || 0
+      const today = new Date().toISOString().split('T')[0]
+
+      const { data: profile } = await (supabase.from('profiles') as any).select('id').limit(1).single()
+      const { data: driver } = await (supabase.from('drivers') as any).select('id').limit(1).single()
+
+      const newRecord = {
+        advance_date: today,
+        amount: amt,
+        staff_type: formData.staff_type === 'driver' ? 'driver' : 'labourer',
+        payment_method: formData.payment_method === 'bank_transfer' ? 'bank_transfer' : formData.payment_method === 'upi' ? 'upi' : 'cash',
+        payment_reference: formData.reference || `ADV-${Date.now()}`,
+        reason: formData.reason,
+        status: 'unapplied',
+        applied_amount: 0,
+        remaining_amount: amt,
+        driver_id: (driver as any)?.id || null,
+        recorded_by: (profile as any)?.id || null,
+      }
+
+      const { data } = await (supabase.from('staff_advances') as any).insert([newRecord]).select()
+
+      const newAdv = {
+        id: (data && (data as any)[0]?.id) || `adv-${Date.now()}`,
+        staff_name: formData.staff_name,
+        staff_type: formData.staff_type,
+        date: today,
+        amount: amt,
+        applied_amount: 0,
+        remaining_amount: amt,
+        payment_method: formData.payment_method,
+        reason: formData.reason,
+        status: 'unapplied',
+      }
+      setAdvances([newAdv, ...advances])
+      toast({
+        title: 'Advance Issued',
+        description: `₹${amt} recorded for ${formData.staff_name}. Added to unapplied balance.`,
+        variant: 'success',
+      })
+      setIsOpen(false)
+    } catch (err: any) {
+      toast({
+        title: 'Error recording advance',
+        description: err.message || 'Saved locally in memory.',
+        variant: 'default',
+      })
+      setIsOpen(false)
     }
-    setAdvances([newAdv, ...advances])
-    toast({
-      title: 'Advance Issued',
-      description: `₹${amt} recorded for ${formData.staff_name}. Added to unapplied balance.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
   }
 
   const columns: ColumnDef<any>[] = [

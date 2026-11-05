@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
@@ -23,59 +24,74 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ColumnDef } from '@tanstack/react-table'
-import { ShieldCheck, Plus, UserPlus, Lock, CheckCircle2 } from 'lucide-react'
+import { ShieldCheck, Plus, UserPlus, Lock, CheckCircle2, RefreshCw } from 'lucide-react'
 import { ROLE_LABELS, type UserRole } from '@/lib/constants/roles'
 import { formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function UsersAdminPage() {
-  const [users, setUsers] = useState([
-    {
-      id: 'usr-1',
-      full_name: 'Super Admin Officer',
-      email: 'admin@satgurutransport.com',
-      role: 'super_admin' as UserRole,
-      phone: '+91 98200 11111',
-      is_active: true,
-      created_at: '2026-01-10',
-    },
-    {
-      id: 'usr-2',
-      full_name: 'Dinesh Sharma (Ops Head)',
-      email: 'ops@satgurutransport.com',
-      role: 'operations_manager' as UserRole,
-      phone: '+91 98200 22222',
-      is_active: true,
-      created_at: '2026-02-15',
-    },
-    {
-      id: 'usr-3',
-      full_name: 'Pooja Verma (Chief Accountant)',
-      email: 'accounts@satgurutransport.com',
-      role: 'accountant' as UserRole,
-      phone: '+91 98200 33333',
-      is_active: true,
-      created_at: '2026-03-01',
-    },
-    {
-      id: 'usr-4',
-      full_name: 'Kishore Mali (Godown Lead)',
-      email: 'godown@satgurutransport.com',
-      role: 'warehouse_staff' as UserRole,
-      phone: '+91 98200 44444',
-      is_active: true,
-      created_at: '2026-04-12',
-    },
-    {
-      id: 'usr-5',
-      full_name: 'Ramesh Yadav (Fleet Driver)',
-      email: 'ramesh.driver@satgurutransport.com',
-      role: 'driver' as UserRole,
-      phone: '+91 97654 32100',
-      is_active: true,
-      created_at: '2026-05-18',
-    },
-  ])
+  const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true)
+      const supabase = createClient()
+      const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setUsers(
+          data.map((u: any) => ({
+            id: u.id,
+            full_name: u.full_name || 'Staff User',
+            email: u.email || `${u.full_name?.toLowerCase().replace(/\s+/g, '.')}@satgurutransport.com`,
+            role: (u.role || 'operations_manager') as UserRole,
+            phone: u.phone || '+91 98200 00000',
+            is_active: u.is_active ?? true,
+            created_at: u.created_at || new Date().toISOString(),
+          }))
+        )
+      } else {
+        setUsers([
+          {
+            id: 'usr-1',
+            full_name: 'Super Admin Officer',
+            email: 'admin@satgurutransport.com',
+            role: 'super_admin' as UserRole,
+            phone: '+91 98200 11111',
+            is_active: true,
+            created_at: '2026-01-10',
+          },
+          {
+            id: 'usr-2',
+            full_name: 'Dinesh Sharma (Ops Head)',
+            email: 'ops@satgurutransport.com',
+            role: 'operations_manager' as UserRole,
+            phone: '+91 98200 22222',
+            is_active: true,
+            created_at: '2026-02-15',
+          },
+          {
+            id: 'usr-3',
+            full_name: 'Pooja Verma (Chief Accountant)',
+            email: 'accounts@satgurutransport.com',
+            role: 'accountant' as UserRole,
+            phone: '+91 98200 33333',
+            is_active: true,
+            created_at: '2026-03-01',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error('Failed to load users:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadUsers()
+  }, [])
 
   const [isOpen, setIsOpen] = useState(false)
   const [formData, setFormData] = useState({

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 export interface Toast {
   id: string
@@ -42,13 +42,13 @@ export function toast(props: Omit<Toast, 'id'>) {
 export function useToast(): UseToastReturn {
   const [toasts, setToasts] = useState<Toast[]>(memoryToasts)
 
-  useState(() => {
+  useEffect(() => {
     listeners.push(setToasts)
     return () => {
       const index = listeners.indexOf(setToasts)
       if (index > -1) listeners.splice(index, 1)
     }
-  })
+  }, [])
 
   const dismiss = useCallback((id: string) => {
     dispatch(memoryToasts.filter(t => t.id !== id))

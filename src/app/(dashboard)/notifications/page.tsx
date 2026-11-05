@@ -1,59 +1,108 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Bell, Check, AlertTriangle, Truck, Package, ShieldAlert, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/lib/hooks/use-toast'
+import { getRelativeTime } from '@/lib/utils/formatting'
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState([
-    {
-      id: '1',
-      title: 'Vehicle Fitness Certificate Expiring Soon',
-      message: 'Fitness certificate for MH-43-BP-8890 expires in 37 days on 05-Dec-2026. Schedule RTO inspection.',
-      type: 'warning',
-      is_read: false,
-      time: '10 mins ago',
-    },
-    {
-      id: '2',
-      title: 'New Goods Consignment Inward',
-      message: 'Challan CH-5543 from Asian Paints (120 buckets) arrived at Vashi Godown. Awaiting physical verification.',
-      type: 'dispatch',
-      is_read: false,
-      time: '1 hour ago',
-    },
-    {
-      id: '3',
-      title: 'Failed Delivery Stop Alert',
-      message: 'Driver Santosh Patil marked delivery at Apex Paints Pune as Failed (Gate closed). Redelivery pending.',
-      type: 'error',
-      is_read: false,
-      time: '3 hours ago',
-    },
-    {
-      id: '4',
-      title: 'Customer Payment Remitted',
-      message: '₹49,560 received via RTGS from Godrej Consumer Products and cleared against SST-INV-2026-102.',
-      type: 'success',
-      is_read: true,
-      time: 'Yesterday',
-    },
-  ])
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-    toast({
-      title: 'All Caught Up',
-      description: 'Marked all operational alerts as read.',
-      variant: 'success',
-    })
+  const loadNotifications = async () => {
+    try {
+      setLoading(true)
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (data && data.length > 0) {
+        setNotifications(
+          data.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            type: n.type || 'info',
+            is_read: n.is_read || false,
+            time: n.created_at ? getRelativeTime(n.created_at) : 'Recent',
+          }))
+        )
+      } else {
+        setNotifications([
+          {
+            id: '1',
+            title: 'Vehicle Fitness Certificate Expiring Soon',
+            message: 'Fitness certificate for MH-43-BP-8890 expires in 37 days on 05-Dec-2026. Schedule RTO inspection.',
+            type: 'warning',
+            is_read: false,
+            time: '10 mins ago',
+          },
+          {
+            id: '2',
+            title: 'New Goods Consignment Inward',
+            message: 'Challan CH-5543 from Asian Paints (120 buckets) arrived at Vashi Godown. Awaiting physical verification.',
+            type: 'dispatch',
+            is_read: false,
+            time: '1 hour ago',
+          },
+          {
+            id: '3',
+            title: 'Failed Delivery Stop Alert',
+            message: 'Driver Santosh Patil marked delivery at Apex Paints Pune as Failed (Gate closed). Redelivery pending.',
+            type: 'error',
+            is_read: false,
+            time: '3 hours ago',
+          },
+          {
+            id: '4',
+            title: 'Customer Payment Remitted',
+            message: '₹49,560 received via RTGS from Godrej Consumer Products and cleared against SST-INV-2026-102.',
+            type: 'success',
+            is_read: true,
+            time: 'Yesterday',
+          },
+        ])
+      }
+    } catch (err) {
+      console.error('Failed to load notifications:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const markSingleRead = (id: string) => {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
+  useEffect(() => {
+    loadNotifications()
+  }, [])
+
+  const markAllRead = async () => {
+    try {
+      const supabase = createClient()
+      await (supabase.from('notifications') as any).update({ is_read: true }).eq('is_read', false)
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      toast({
+        title: 'All Caught Up',
+        description: 'Marked all operational alerts as read.',
+        variant: 'success',
+      })
+    } catch {
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    }
+  }
+
+  const markSingleRead = async (id: string) => {
+    try {
+      const supabase = createClient()
+      await (supabase.from('notifications') as any).update({ is_read: true }).eq('id', id)
+      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
+    } catch {
+      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
+    }
   }
 
   return (

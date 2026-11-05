@@ -3,6 +3,7 @@
 import { PageHeader } from '@/components/shared/page-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { createClient } from '@/lib/supabase/client'
 import {
   FileText,
   Download,
@@ -13,25 +14,74 @@ import {
   Truck,
   Users,
   DollarSign,
+  Loader2,
 } from 'lucide-react'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function ReportsPage() {
-  const downloadReport = (title: string) => {
-    const csv = `Report: ${title}\nGenerated on: ${new Date().toLocaleString('en-IN')}\nStatus: Verified\nSummary: All transport ledger transactions reconciled.\n`
-    const encoded = encodeURI(`data:text/csv;charset=utf-8,${csv}`)
-    const link = document.createElement('a')
-    link.href = encoded
-    link.download = `${title.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const downloadReport = async (title: string) => {
+    try {
+      const supabase = createClient()
+      let csvContent = `Report: ${title}\nGenerated on: ${new Date().toLocaleString('en-IN')}\nOrganization: Shree Satguru Transport\n\n`
 
-    toast({
-      title: 'Report Exported',
-      description: `${title} exported successfully to CSV.`,
-      variant: 'success',
-    })
+      if (title.includes('Goods Inward')) {
+        const { data } = await supabase.from('goods_receipts').select('invoice_number, consignor, delivery_city, package_count, actual_quantity, damaged_quantity, status, created_at')
+        csvContent += `Invoice Number,Consignor,Destination City,Declared Qty,Actual Qty,Damaged Qty,Status,Date\n`
+        data?.forEach((r: any) => {
+          csvContent += `"${r.invoice_number}","${r.consignor}","${r.delivery_city}","${r.package_count || 0}","${r.actual_quantity || 0}","${r.damaged_quantity || 0}","${r.status}","${r.created_at}"\n`
+        })
+      } else if (title.includes('Dispatch Register')) {
+        const { data } = await supabase.from('dispatches').select('dispatch_number, dispatch_date, status, planned_start_time, total_packages, total_weight_kg')
+        csvContent += `Dispatch Number,Date,Status,Planned Time,Total Packages,Weight (KG)\n`
+        data?.forEach((d: any) => {
+          csvContent += `"${d.dispatch_number}","${d.dispatch_date}","${d.status}","${d.planned_start_time || ''}","${d.total_packages || 0}","${d.total_weight_kg || 0}"\n`
+        })
+      } else if (title.includes('Fuel') || title.includes('Expense')) {
+        const { data } = await supabase.from('expenses').select('expense_date, category, amount, payment_method, vendor, description')
+        csvContent += `Date,Category,Amount (INR),Payment Mode,Vendor,Description\n`
+        data?.forEach((e: any) => {
+          csvContent += `"${e.expense_date}","${e.category}","${e.amount}","${e.payment_method}","${e.vendor || ''}","${e.description || ''}"\n`
+        })
+      } else if (title.includes('Outstanding') || title.includes('Profit')) {
+        const { data } = await supabase.from('invoices').select('invoice_number, invoice_date, due_date, subtotal, tax_amount, total_amount, paid_amount, outstanding_amount, status')
+        csvContent += `Invoice Number,Invoice Date,Due Date,Subtotal,Tax,Total Amount,Paid Amount,Outstanding,Status\n`
+        data?.forEach((inv: any) => {
+          csvContent += `"${inv.invoice_number}","${inv.invoice_date}","${inv.due_date}","${inv.subtotal}","${inv.tax_amount}","${inv.total_amount}","${inv.paid_amount}","${inv.outstanding_amount}","${inv.status}"\n`
+        })
+      } else if (title.includes('Staff') || title.includes('Muster') || title.includes('Advance')) {
+        const { data } = await supabase.from('staff_members').select('employee_code, full_name, staff_type, phone, daily_wage, status')
+        csvContent += `Staff Code,Full Name,Role,Phone,Daily Wage,Status\n`
+        data?.forEach((s: any) => {
+          csvContent += `"${s.employee_code}","${s.full_name}","${s.staff_type}","${s.phone || ''}","${s.daily_wage || 0}","${s.status}"\n`
+        })
+      } else {
+        const { data } = await supabase.from('vehicles').select('registration_number, vehicle_type, capacity_tonnes, status, ownership_type')
+        csvContent += `Registration Number,Vehicle Type,Capacity (Tonnes),Status,Ownership\n`
+        data?.forEach((v: any) => {
+          csvContent += `"${v.registration_number}","${v.vehicle_type}","${v.capacity_tonnes}","${v.status}","${v.ownership_type}"\n`
+        })
+      }
+
+      const encoded = encodeURI(`data:text/csv;charset=utf-8,${csvContent}`)
+      const link = document.createElement('a')
+      link.href = encoded
+      link.download = `${title.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: 'Report Generated & Exported',
+        description: `${title} exported successfully with real database rows.`,
+        variant: 'success',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Export Error',
+        description: err.message || 'Failed to export report.',
+        variant: 'error',
+      })
+    }
   }
 
   const reports = [
