@@ -81,3 +81,4 @@ VALUES (
   'PRODUCTION_INIT',
   '{"status": "cleaned", "mode": "production_ready", "timestamp": "' || NOW() || '"}'::jsonb
 );
+
