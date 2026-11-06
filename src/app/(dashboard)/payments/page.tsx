@@ -318,7 +318,7 @@ export default function PaymentsPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Confirm Receipt
               </Button>
             </DialogFooter>

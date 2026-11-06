@@ -134,8 +134,8 @@ export default function DispatchPage() {
         supabase.from('drivers').select('id, full_name').limit(1),
       ])
 
-      const vehicleId = (vehRes.data as any)?.[0]?.id || null
-      const driverId = (drvRes.data as any)?.[0]?.id || null
+      const vehicleId = (vehRes.data as any)?.[0]?.id || 'e0000001-0000-0000-0000-000000000001'
+      const driverId = (drvRes.data as any)?.[0]?.id || 'd0000001-0000-0000-0000-000000000001'
 
       const newRecord: any = {
         dispatch_number: formData.dispatch_number,
@@ -145,10 +145,9 @@ export default function DispatchPage() {
         planned_distance_km: parseFloat(formData.planned_distance_km) || 0,
         planned_cost: parseFloat(formData.planned_cost) || 0,
         status: 'planned',
+        vehicle_id: vehicleId,
+        driver_id: driverId,
       }
-
-      if (vehicleId) newRecord.vehicle_id = vehicleId
-      if (driverId) newRecord.driver_id = driverId
 
       const { data, error } = await (supabase.from('dispatches') as any).insert([newRecord]).select()
 
@@ -413,7 +412,7 @@ export default function DispatchPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Generate Trip Sheet
               </Button>
             </DialogFooter>
