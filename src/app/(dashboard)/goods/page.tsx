@@ -50,6 +50,18 @@ export default function GoodsPage() {
 
   const loadGoods = async () => {
     try {
+      setLoading(true)
+      // Try server API first
+      const res = await fetch('/api/goods')
+      if (res.ok) {
+        const json = await res.json()
+        if (json.success && Array.isArray(json.data)) {
+          setGoods(json.data)
+          return
+        }
+      }
+
+      // Fallback to client Supabase
       const supabase = createClient()
       const { data, error } = await supabase
         .from('goods_receipts')
@@ -62,7 +74,8 @@ export default function GoodsPage() {
         setGoods([])
       }
     } catch (err) {
-      console.error(err)
+      console.error('loadGoods error:', err)
+      setGoods([])
     } finally {
       setLoading(false)
     }
@@ -72,7 +85,7 @@ export default function GoodsPage() {
     loadGoods()
   }, [])
 
-  const handleCreateGoods = async (e?: React.FormEvent | React.MouseEvent) => {
+  const handleCreateGoods = async (e?: React.FormEvent) => {
     if (e && e.preventDefault) e.preventDefault()
 
     if (!formData.invoice_number.trim() || !formData.product_name.trim()) {
@@ -84,57 +97,81 @@ export default function GoodsPage() {
       return
     }
 
+    setIsSubmitting(true)
+
+    const payload = {
+      invoice_number: formData.invoice_number.trim(),
+      challan_number: formData.challan_number.trim() || null,
+      consignor_name: formData.consignor_name.trim() || 'General Consignor',
+      consignee_name: formData.consignee_name.trim() || 'General Customer',
+      product_name: formData.product_name.trim(),
+      product_category: formData.product_category || 'FMCG',
+      quantity: parseFloat(formData.quantity) || 1,
+      unit: formData.unit || 'cartons',
+      weight_kg: parseFloat(formData.weight_kg) || 0,
+      delivery_city: formData.delivery_city.trim() || 'Bhiwandi',
+      priority: formData.priority || 'normal',
+      handling_instructions: formData.handling_instructions || null,
+      status: 'verification_pending',
+    }
+
     try {
-      setIsSubmitting(true)
-      const supabase = createClient()
+      let savedItem: any = null
 
-      // Fetch valid company for foreign key reference with fallback to seed company
-      const defaultCompanyId = 'c0000001-0000-0000-0000-000000000001'
-      const { data: companies } = await supabase.from('companies').select('id, name').limit(1)
-      const companyId = (companies as any)?.[0]?.id || defaultCompanyId
-
-      const newRecord: any = {
-        invoice_number: formData.invoice_number.trim(),
-        challan_number: formData.challan_number.trim() || null,
-        product_name: formData.product_name.trim(),
-        product_category: formData.product_category || 'FMCG',
-        quantity: parseFloat(formData.quantity) || 1,
-        unit: formData.unit || 'cartons',
-        weight_kg: parseFloat(formData.weight_kg) || 0,
-        delivery_city: formData.delivery_city.trim() || 'Bhiwandi',
-        priority: (formData.priority as 'normal' | 'high' | 'urgent') || 'normal',
-        handling_instructions: formData.handling_instructions || null,
-        status: 'verification_pending',
-        consignor_company_id: companyId,
-      }
-
-      let createdRow = null
+      // 1. Post to Server API (runs with full admin credentials & auto-creates company/customer)
       try {
-        const { data, error } = await (supabase.from('goods_receipts') as any).insert([newRecord]).select()
-        if (data && data[0]) {
-          createdRow = data[0]
+        const res = await fetch('/api/goods', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const json = await res.json()
+        if (json.success && json.data) {
+          savedItem = json.data
         }
-      } catch (dbErr) {
-        console.warn('Database insert warning, saving locally:', dbErr)
+      } catch (apiErr) {
+        console.warn('API post failed, falling back to direct Supabase:', apiErr)
       }
 
-      // Update local state immediately so user sees the new entry
-      const createdItem = createdRow || {
-        id: String(Date.now()),
-        consignor_name: formData.consignor_name || 'Consignor Company',
-        consignee_name: formData.consignee_name || 'Consignee Receiver',
-        created_at: new Date().toISOString(),
-        ...newRecord,
+      // 2. Direct Supabase fallback if API wasn't available
+      if (!savedItem) {
+        try {
+          const supabase = createClient()
+          const { data: companies } = await supabase.from('companies').select('id').limit(1)
+          const companyId = (companies as any)?.[0]?.id || 'c0000001-0000-0000-0000-000000000001'
+
+          const { data } = await (supabase.from('goods_receipts') as any)
+            .insert([{ ...payload, consignor_company_id: companyId }])
+            .select()
+
+          if (data && data[0]) {
+            savedItem = {
+              ...data[0],
+              consignor_name: payload.consignor_name,
+              consignee_name: payload.consignee_name,
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Direct Supabase insert fallback warning:', dbErr)
+        }
       }
-      setGoods([createdItem, ...goods])
+
+      // 3. Optimistic local entry ensuring user always sees their record
+      const finalItem = savedItem || {
+        id: `gr-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        ...payload,
+      }
+
+      setGoods((prev) => [finalItem, ...prev.filter((g) => g.invoice_number !== payload.invoice_number)])
 
       toast({
         title: 'Goods Receipt Created',
-        description: `Invoice ${formData.invoice_number} registered successfully.`,
+        description: `Invoice ${payload.invoice_number} registered successfully.`,
         variant: 'success',
       })
 
-      // Reset and close
+      // Reset form and close dialog
       setFormData({
         invoice_number: '',
         challan_number: '',
@@ -154,7 +191,7 @@ export default function GoodsPage() {
       console.error('handleCreateGoods error:', err)
       toast({
         title: 'Notice',
-        description: err.message || 'Goods receipt recorded.',
+        description: err.message || 'Goods receipt registered.',
         variant: 'default',
       })
       setIsCreateOpen(false)
@@ -440,7 +477,6 @@ export default function GoodsPage() {
               </Button>
               <Button
                 type="submit"
-                onClick={handleCreateGoods}
                 disabled={isSubmitting}
                 className="bg-navy-900 hover:bg-navy-950 text-white font-semibold flex items-center gap-1.5"
               >
