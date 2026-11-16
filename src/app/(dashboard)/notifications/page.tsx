@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Bell, Check, AlertTriangle, Truck, Package, ShieldAlert, CheckCircle2 } from 'lucide-react'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { useUser } from '@/lib/hooks/use-user'
 import { getRelativeTime } from '@/lib/utils/formatting'
 
 export default function NotificationsPage() {
@@ -22,23 +24,19 @@ export default function NotificationsPage() {
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (data && data.length > 0) {
-        setNotifications(
-          data.map((n: any) => ({
-            id: n.id,
-            title: n.title,
-            message: n.message,
-            type: n.type || 'info',
-            is_read: n.is_read || false,
-            time: n.created_at ? getRelativeTime(n.created_at) : 'Recent',
-          }))
-        )
-      } else {
-        setNotifications([])
-      }
+      if (error) throw error
+      setNotifications((data || []).map((n: any) => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type || 'info',
+        is_read: Boolean(n.is_read),
+        time: n.created_at ? getRelativeTime(n.created_at) : '',
+      })))
     } catch (err) {
       console.error('Failed to load notifications:', err)
       setNotifications([])
+      toast({ title: 'Could not load notifications', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -48,28 +46,36 @@ export default function NotificationsPage() {
     loadNotifications()
   }, [])
 
+  const { user } = useUser()
+
   const markAllRead = async () => {
+    if (!user) return
     try {
       const supabase = createClient()
-      await (supabase.from('notifications') as any).update({ is_read: true }).eq('is_read', false)
+      const { error } = await (supabase.from('notifications') as any)
+        .update({ is_read: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false)
+      if (error) throw error
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
       toast({
         title: 'All Caught Up',
         description: 'Marked all operational alerts as read.',
         variant: 'success',
       })
-    } catch {
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    } catch (err) {
+      toast({ title: 'Could not update notifications', description: getErrorMessage(err), variant: 'error' })
     }
   }
 
   const markSingleRead = async (id: string) => {
     try {
       const supabase = createClient()
-      await (supabase.from('notifications') as any).update({ is_read: true }).eq('id', id)
+      const { error } = await (supabase.from('notifications') as any).update({ is_read: true }).eq('id', id)
+      if (error) throw error
       setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
-    } catch {
-      setNotifications(prev => prev.map(n => (n.id === id ? { ...n, is_read: true } : n)))
+    } catch (err) {
+      toast({ title: 'Could not update notification', description: getErrorMessage(err), variant: 'error' })
     }
   }
 

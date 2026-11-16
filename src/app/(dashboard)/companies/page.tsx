@@ -25,6 +25,9 @@ import {
 import { ColumnDef } from '@tanstack/react-table'
 import { Building2, Plus, Phone, Mail, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatting'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
 import { toast } from '@/lib/hooks/use-toast'
 
 export default function CompaniesPage() {
@@ -39,14 +42,12 @@ export default function CompaniesPage() {
         .select('*')
         .order('name', { ascending: true })
 
-      if (data && data.length > 0) {
-        setCompanies(data)
-      } else {
-        setCompanies([])
-      }
+      if (error) throw error
+      setCompanies(data || [])
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load companies:', err)
       setCompanies([])
+      toast({ title: 'Could not load companies', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -69,43 +70,60 @@ export default function CompaniesPage() {
     credit_limit: '0',
   })
 
+  const [submitting, setSubmitting] = useState(false)
+  const { can } = useUser()
+  const canManage = can('MANAGE_COMPANIES')
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const creditLimit = formData.credit_limit.trim() === '' ? 0 : parseAmount(formData.credit_limit)
+    if (!formData.name.trim()) {
+      toast({ title: 'Company name is required', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(creditLimit) || creditLimit < 0) {
+      toast({ title: 'Invalid credit limit', description: 'Enter a number of 0 or more.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
       const newRecord = {
-        name: formData.name,
+        name: formData.name.trim(),
         company_type: formData.company_type as any,
-        contact_person: formData.contact_person,
-        phone: formData.phone,
-        email: formData.email,
-        city: formData.city,
-        gstin: formData.gstin,
-        billing_terms: formData.billing_terms,
-        credit_limit: parseFloat(formData.credit_limit) || 0,
+        contact_person: formData.contact_person.trim() || null,
+        phone: formData.phone.trim() || null,
+        email: formData.email.trim() || null,
+        city: formData.city.trim() || null,
+        gstin: formData.gstin.trim().toUpperCase() || null,
+        billing_terms: formData.billing_terms.trim() || null,
+        credit_limit: creditLimit,
         is_active: true,
       }
 
       const { data, error } = await (supabase.from('companies') as any).insert([newRecord]).select()
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The company was not saved. Please try again.')
 
-      const createdComp = (data && data[0]) || {
-        id: `c-${Date.now()}`,
-        ...newRecord,
-      }
-
-      setCompanies([createdComp, ...companies])
+      setCompanies(prev => [data[0], ...prev])
       toast({
         title: 'Company Registered',
-        description: `${formData.name} added to master registry.`,
+        description: `${newRecord.name} added to master registry.`,
         variant: 'success',
       })
+      setFormData({ name: '', company_type: 'client', contact_person: '', phone: '', email: '', city: '', gstin: '', billing_terms: '30 Days Net', credit_limit: '0' })
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error adding company',
-        description: err.message || 'Failed to save to database',
+        description: getErrorMessage(err, 'Failed to save to database'),
         variant: 'error',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -169,6 +187,8 @@ export default function CompaniesPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Add Company
@@ -179,6 +199,7 @@ export default function CompaniesPage() {
       <DataTable
         columns={columns}
         data={companies}
+        loading={loading}
         searchColumn="name"
         searchPlaceholder="Search company name or GSTIN..."
       />
@@ -201,7 +222,7 @@ export default function CompaniesPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Company Type</Label>
                 <Select
@@ -228,7 +249,7 @@ export default function CompaniesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Contact Person</Label>
                 <Input
@@ -246,7 +267,7 @@ export default function CompaniesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Billing Terms</Label>
                 <Input
@@ -269,7 +290,7 @@ export default function CompaniesPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Save Company
               </Button>
             </DialogFooter>

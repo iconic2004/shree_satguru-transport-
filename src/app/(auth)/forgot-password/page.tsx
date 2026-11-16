@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/lib/hooks/use-toast'
+import { isSupabaseConfigured } from '@/lib/supabase/config'
+import { getErrorMessage } from '@/lib/utils/errors'
 import { Truck, ArrowLeft, Mail, CheckCircle2 } from 'lucide-react'
 
 export default function ForgotPasswordPage() {
@@ -20,16 +22,17 @@ export default function ForgotPasswordPage() {
     setLoading(true)
 
     try {
+      if (!isSupabaseConfigured()) {
+        throw new Error('The application is not configured. Contact your administrator.')
+      }
       const supabase = createClient()
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       })
 
-      if (error) {
-        // demo handling
-        setSubmitted(true)
-        return
-      }
+      // Supabase does not reveal whether the account exists, so a real error here
+      // (rate limit, network, misconfiguration) is safe and useful to show.
+      if (error) throw error
 
       setSubmitted(true)
       toast({
@@ -37,10 +40,10 @@ export default function ForgotPasswordPage() {
         description: 'Check your email for the password recovery link.',
         variant: 'success',
       })
-    } catch (err: any) {
+    } catch (err) {
       toast({
-        title: 'Error',
-        description: err.message || 'Failed to send recovery email.',
+        title: 'Could not send recovery email',
+        description: getErrorMessage(err, 'Failed to send recovery email.'),
         variant: 'error',
       })
     } finally {

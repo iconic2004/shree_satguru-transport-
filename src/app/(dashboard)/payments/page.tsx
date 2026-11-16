@@ -27,6 +27,32 @@ import { ColumnDef } from '@tanstack/react-table'
 import { CreditCard, Plus, CheckCircle2, ArrowDownRight, RefreshCw } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
+
+interface OpenInvoice {
+  id: string
+  invoice_number: string
+  customer_id: string
+  company_id: string | null
+  outstanding_amount: number
+  client_name: string
+}
+
+function toRow(p: any) {
+  return {
+    id: p.id,
+    payment_date: p.payment_date,
+    client_name: p.customers?.name || p.companies?.name || '-',
+    amount: Number(p.amount) || 0,
+    payment_method: p.payment_method,
+    reference_number: p.payment_reference || '-',
+    bank_name: p.bank_name || '-',
+    allocated_invoice: p.invoices?.invoice_number || 'Unallocated',
+    status: p.status,
+  }
+}
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<any[]>([])
@@ -36,31 +62,30 @@ export default function PaymentsPage() {
     try {
       setLoading(true)
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('payments')
-        .select('*, customers(name), companies(name), invoices(invoice_number)')
-        .order('payment_date', { ascending: false })
+      const [payRes, invRes] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('*, customers(name), companies(name), invoices(invoice_number)')
+          .order('payment_date', { ascending: false }),
+        supabase
+          .from('invoices')
+          .select('id, invoice_number, customer_id, company_id, outstanding_amount, status, customers(name)')
+          .gt('outstanding_amount', 0)
+          .not('status', 'in', '(cancelled,credited)')
+          .order('invoice_date', { ascending: false }),
+      ])
 
-      if (data && data.length > 0) {
-        setPayments(
-          data.map((p: any) => ({
-            id: p.id,
-            payment_date: p.payment_date,
-            client_name: p.companies?.name || p.customers?.name || 'Client',
-            amount: p.amount,
-            payment_method: p.payment_method,
-            reference_number: p.payment_reference || 'TRX-REF',
-            bank_name: p.bank_name || 'Bank',
-            allocated_invoice: p.invoices?.invoice_number || 'N/A',
-            status: p.status || 'completed',
-          }))
-        )
-      } else {
-        setPayments([])
-      }
-    } catch (err: any) {
+      if (payRes.error) throw payRes.error
+      setPayments((payRes.data || []).map(toRow))
+      setOpenInvoices(((invRes.data as any[]) || []).map(inv => ({
+        ...inv,
+        outstanding_amount: Number(inv.outstanding_amount) || 0,
+        client_name: inv.customers?.name || '-',
+      })))
+    } catch (err) {
       console.error('Failed to load payments:', err)
       setPayments([])
+      toast({ title: 'Could not load payments', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -70,63 +95,87 @@ export default function PaymentsPage() {
     loadPayments()
   }, [])
 
+  const [openInvoices, setOpenInvoices] = useState<OpenInvoice[]>([])
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    client_name: '',
+  const [submitting, setSubmitting] = useState(false)
+  const { user, can } = useUser()
+  const canManage = can('MANAGE_PAYMENTS')
+  const emptyForm = {
+    invoice_id: '',
     amount: '',
     payment_method: 'neft',
     reference_number: '',
     bank_name: '',
-    allocated_invoice: '',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const invoice = openInvoices.find(i => i.id === formData.invoice_id)
+    const amt = parseAmount(formData.amount)
+    if (!invoice) {
+      toast({ title: 'Select the invoice this payment is for', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(amt) || amt <= 0) {
+      toast({ title: 'Invalid amount', description: 'Enter an amount greater than 0.', variant: 'error' })
+      return
+    }
+    if (amt > invoice.outstanding_amount) {
+      toast({
+        title: 'Amount exceeds balance',
+        description: `Invoice ${invoice.invoice_number} has only ${formatCurrency(invoice.outstanding_amount)} outstanding.`,
+        variant: 'error',
+      })
+      return
+    }
+    if (!user) {
+      toast({ title: 'Session expired', description: 'Please sign in again.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
-      const amt = parseFloat(formData.amount) || 0
-      const today = new Date().toISOString().split('T')[0]
-
-      const { data: profile } = await (supabase.from('profiles') as any).select('id').limit(1).single()
-
       const newRecord = {
-        payment_date: today,
-        amount: amt,
-        payment_method: formData.payment_method === 'neft' ? 'bank_transfer' : formData.payment_method === 'rtgs' ? 'bank_transfer' : 'upi',
-        payment_reference: formData.reference_number || `REF-${Date.now()}`,
-        bank_name: formData.bank_name,
-        status: 'completed',
-        recorded_by: (profile as any)?.id || null,
-      }
-
-      const { data } = await (supabase.from('payments') as any).insert([newRecord]).select()
-
-      const newPay = {
-        id: (data && (data as any)[0]?.id) || `pay-c-${Date.now()}`,
-        payment_date: today,
-        client_name: formData.client_name,
+        invoice_id: invoice.id,
+        customer_id: invoice.customer_id,
+        company_id: invoice.company_id,
+        payment_date: todayIST(),
         amount: amt,
         payment_method: formData.payment_method,
-        reference_number: formData.reference_number || 'TRX-DEFAULT',
-        bank_name: formData.bank_name,
-        allocated_invoice: formData.allocated_invoice,
+        payment_reference: formData.reference_number.trim() || null,
+        bank_name: formData.bank_name.trim() || null,
         status: 'completed',
+        recorded_by: user.id,
       }
 
-      setPayments([newPay, ...payments])
+      // The invoice's paid / outstanding amounts are updated atomically by the
+      // trg_apply_payment_to_invoice trigger (migration 00011).
+      const { data, error } = await (supabase.from('payments') as any)
+        .insert([newRecord])
+        .select('*, customers(name), companies(name), invoices(invoice_number)')
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The payment was not saved. Please try again.')
+
       toast({
         title: 'Payment Received',
-        description: `₹${amt} from ${formData.client_name} allocated to ${formData.allocated_invoice}.`,
+        description: `${formatCurrency(amt)} from ${invoice.client_name} applied to ${invoice.invoice_number}.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+      await loadPayments()
+    } catch (err) {
       toast({
         title: 'Error saving payment',
-        description: err.message || 'Saved locally in memory.',
-        variant: 'default',
+        description: getErrorMessage(err, 'Failed to save to database'),
+        variant: 'error',
       })
-      setIsOpen(false)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -198,6 +247,8 @@ export default function PaymentsPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Record Payment Receipt
@@ -208,6 +259,7 @@ export default function PaymentsPage() {
       <DataTable
         columns={columns}
         data={payments}
+        loading={loading}
         searchColumn="client_name"
         searchPlaceholder="Search client name..."
       />
@@ -222,15 +274,24 @@ export default function PaymentsPage() {
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3 pt-2">
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Client Company *</Label>
-              <Input
-                placeholder="Enter client company name"
-                value={formData.client_name}
-                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                required
-              />
+              <Label className="text-xs font-semibold">Against Invoice *</Label>
+              <Select
+                value={formData.invoice_id}
+                onValueChange={(val) => setFormData({ ...formData, invoice_id: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={openInvoices.length ? 'Select an open invoice' : 'No invoices with an outstanding balance'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {openInvoices.map(inv => (
+                    <SelectItem key={inv.id} value={inv.id}>
+                      {inv.invoice_number} — {inv.client_name} (due {formatCurrency(inv.outstanding_amount)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Amount Received (₹) *</Label>
                 <Input
@@ -253,13 +314,15 @@ export default function PaymentsPage() {
                   <SelectContent>
                     <SelectItem value="neft">NEFT</SelectItem>
                     <SelectItem value="rtgs">RTGS</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer (IMPS / other)</SelectItem>
                     <SelectItem value="cheque">Cheque</SelectItem>
                     <SelectItem value="upi">UPI</SelectItem>
+                    <SelectItem value="cash">Cash</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Bank Name</Label>
                 <Input
@@ -277,19 +340,11 @@ export default function PaymentsPage() {
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Allocate To Invoice</Label>
-              <Input
-                placeholder="SST-INV-2026-101"
-                value={formData.allocated_invoice}
-                onChange={(e) => setFormData({ ...formData, allocated_invoice: e.target.value })}
-              />
-            </div>
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Confirm Receipt
               </Button>
             </DialogFooter>

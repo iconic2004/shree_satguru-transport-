@@ -28,6 +28,9 @@ import { ShieldCheck, Plus, UserPlus, Lock, CheckCircle2, RefreshCw } from 'luci
 import { ROLE_LABELS, type UserRole } from '@/lib/constants/roles'
 import { formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { validateNewPassword } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
 
 export default function UsersAdminPage() {
   const [users, setUsers] = useState<any[]>([])
@@ -36,27 +39,14 @@ export default function UsersAdminPage() {
   const loadUsers = async () => {
     try {
       setLoading(true)
-      const supabase = createClient()
-      const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false })
-
-      if (data && data.length > 0) {
-        setUsers(
-          data.map((u: any) => ({
-            id: u.id,
-            full_name: u.full_name || 'Staff User',
-            email: u.email || '',
-            role: (u.role || 'operations_manager') as UserRole,
-            phone: u.phone || '',
-            is_active: u.is_active ?? true,
-            created_at: u.created_at || new Date().toISOString(),
-          }))
-        )
-      } else {
-        setUsers([])
-      }
+      const res = await fetch('/api/admin/users', { cache: 'no-store' })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success) throw new Error(json?.error || `Request failed (${res.status})`)
+      setUsers(json.data)
     } catch (err) {
       console.error('Failed to load users:', err)
       setUsers([])
+      toast({ title: 'Could not load users', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -67,42 +57,76 @@ export default function UsersAdminPage() {
   }, [])
 
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const { user: currentUser, can } = useUser()
+  const canManage = can('MANAGE_USERS')
+  const emptyForm = {
     full_name: '',
     email: '',
     role: 'operations_manager' as UserRole,
     phone: '',
     password: '',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newUser = {
-      id: `usr-${Date.now()}`,
-      full_name: formData.full_name,
-      email: formData.email,
-      role: formData.role,
-      phone: formData.phone,
-      is_active: true,
-      created_at: new Date().toISOString().split('T')[0],
+    if (submitting) return
+
+    const passwordProblem = validateNewPassword(formData.password, formData.password)
+    if (passwordProblem) {
+      toast({ title: 'Weak temporary password', description: passwordProblem, variant: 'error' })
+      return
     }
-    setUsers([newUser, ...users])
-    toast({
-      title: 'User Created',
-      description: `Account for ${formData.full_name} registered with ${ROLE_LABELS[formData.role]} role.`,
-      variant: 'success',
-    })
-    setIsOpen(false)
+
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success) throw new Error(json?.error || `Request failed (${res.status})`)
+
+      setUsers(prev => [json.data, ...prev])
+      toast({
+        title: 'User Created',
+        description: `Account for ${formData.full_name} created with ${ROLE_LABELS[formData.role]} role.`,
+        variant: 'success',
+      })
+      setFormData(emptyForm)
+      setIsOpen(false)
+    } catch (err) {
+      toast({ title: 'Could not create user', description: getErrorMessage(err), variant: 'error' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const toggleStatus = (id: string) => {
-    setUsers(prev =>
-      prev.map(u => (u.id === id ? { ...u, is_active: !u.is_active } : u))
-    )
-    toast({
-      title: 'User Status Toggled',
-      description: 'Account activation status changed.',
-    })
+  const toggleStatus = async (id: string, currentlyActive: boolean) => {
+    setTogglingId(id)
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_active: !currentlyActive }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success) throw new Error(json?.error || `Request failed (${res.status})`)
+
+      setUsers(prev => prev.map(u => (u.id === id ? { ...u, is_active: json.data.is_active } : u)))
+      toast({
+        title: json.data.is_active ? 'User Activated' : 'User Deactivated',
+        description: json.data.is_active ? 'The user can sign in again.' : 'The user has been signed out and blocked.',
+        variant: 'success',
+      })
+    } catch (err) {
+      toast({ title: 'Could not change status', description: getErrorMessage(err), variant: 'error' })
+    } finally {
+      setTogglingId(null)
+    }
   }
 
   const columns: ColumnDef<any>[] = [
@@ -156,7 +180,9 @@ export default function UsersAdminPage() {
           variant="outline"
           size="sm"
           className="h-7 text-xs"
-          onClick={() => toggleStatus(row.original.id)}
+          disabled={!canManage || row.original.id === currentUser?.id || togglingId === row.original.id}
+          title={row.original.id === currentUser?.id ? 'You cannot deactivate your own account' : undefined}
+          onClick={() => toggleStatus(row.original.id, row.original.is_active)}
         >
           {row.original.is_active ? 'Deactivate' : 'Activate'}
         </Button>
@@ -174,6 +200,8 @@ export default function UsersAdminPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <UserPlus className="w-4 h-4 mr-1.5" />
             Create User Account
@@ -184,6 +212,7 @@ export default function UsersAdminPage() {
       <DataTable
         columns={columns}
         data={users}
+        loading={loading}
         searchColumn="full_name"
         searchPlaceholder="Search by name or email..."
       />
@@ -216,7 +245,7 @@ export default function UsersAdminPage() {
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">User Role *</Label>
                 <Select
@@ -250,8 +279,10 @@ export default function UsersAdminPage() {
               <Label className="text-xs font-semibold">Temporary Password *</Label>
               <Input
                 required
+                minLength={8}
                 type="password"
-                placeholder="••••••••"
+                autoComplete="new-password"
+                placeholder="Min 8 chars, letters + numbers"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               />
@@ -260,7 +291,7 @@ export default function UsersAdminPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Provision User
               </Button>
             </DialogFooter>

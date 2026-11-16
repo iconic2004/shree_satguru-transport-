@@ -28,6 +28,34 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Wallet, Plus, CreditCard, CheckCircle2, ArrowDownRight, RefreshCw } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
+
+interface Person {
+  key: string
+  id: string
+  kind: 'driver' | 'staff'
+  name: string
+  staff_type: string
+}
+
+function toRow(adv: any) {
+  const amount = Number(adv.amount) || 0
+  const applied = Number(adv.applied_amount) || 0
+  return {
+    id: adv.id,
+    staff_name: adv.drivers?.full_name || adv.staff_members?.full_name || '-',
+    staff_type: adv.staff_type,
+    date: adv.advance_date,
+    amount,
+    applied_amount: applied,
+    remaining_amount: adv.remaining_amount != null ? Number(adv.remaining_amount) : amount - applied,
+    payment_method: adv.payment_method,
+    reason: adv.reason || '-',
+    status: adv.status,
+  }
+}
 
 export default function StaffAdvancesPage() {
   const [advances, setAdvances] = useState<any[]>([])
@@ -37,32 +65,25 @@ export default function StaffAdvancesPage() {
     try {
       setLoading(true)
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('staff_advances')
-        .select('*, drivers(full_name), staff_members(full_name)')
-        .order('advance_date', { ascending: false })
+      const [advRes, drvRes, stfRes] = await Promise.all([
+        supabase
+          .from('staff_advances')
+          .select('*, drivers(full_name), staff_members(full_name)')
+          .order('advance_date', { ascending: false }),
+        supabase.from('drivers').select('id, full_name').eq('employment_status', 'active').order('full_name'),
+        supabase.from('staff_members').select('id, full_name, staff_type').eq('employment_status', 'active').order('full_name'),
+      ])
 
-      if (data && data.length > 0) {
-        setAdvances(
-          data.map((adv: any) => ({
-            id: adv.id,
-            staff_name: adv.drivers?.full_name || adv.staff_members?.full_name || 'Staff Member',
-            staff_type: adv.staff_type || 'driver',
-            date: adv.advance_date,
-            amount: adv.amount,
-            applied_amount: adv.applied_amount || 0,
-            remaining_amount: adv.remaining_amount ?? (adv.amount - (adv.applied_amount || 0)),
-            payment_method: adv.payment_method,
-            reason: adv.reason || 'General emergency cash advance',
-            status: adv.status || 'unapplied',
-          }))
-        )
-      } else {
-        setAdvances([])
-      }
-    } catch (err: any) {
+      if (advRes.error) throw advRes.error
+      setAdvances((advRes.data || []).map(toRow))
+      setPeople([
+        ...((drvRes.data as any[]) || []).map(d => ({ key: `drv:${d.id}`, id: d.id, kind: 'driver' as const, name: d.full_name, staff_type: 'driver' })),
+        ...((stfRes.data as any[]) || []).map(s => ({ key: `stf:${s.id}`, id: s.id, kind: 'staff' as const, name: s.full_name, staff_type: s.staff_type || 'labourer' })),
+      ])
+    } catch (err) {
       console.error('Failed to load advances:', err)
       setAdvances([])
+      toast({ title: 'Could not load advances', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -72,68 +93,79 @@ export default function StaffAdvancesPage() {
     loadAdvances()
   }, [])
 
+  const [people, setPeople] = useState<Person[]>([])
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    staff_name: '',
-    staff_type: 'driver',
+  const [submitting, setSubmitting] = useState(false)
+  const { user, can } = useUser()
+  const canManage = can('MANAGE_ADVANCES')
+  const emptyForm = {
+    person_key: '',
     amount: '',
     payment_method: 'cash',
     reason: '',
     reference: '',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
+  const selectedPerson = people.find(p => p.key === formData.person_key)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const amt = parseAmount(formData.amount)
+    if (!selectedPerson) {
+      toast({ title: 'Select the staff member receiving the advance', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(amt) || amt <= 0) {
+      toast({ title: 'Invalid amount', description: 'Enter an amount greater than 0.', variant: 'error' })
+      return
+    }
+    if (!user) {
+      toast({ title: 'Session expired', description: 'Please sign in again.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
-      const amt = parseFloat(formData.amount) || 0
-      const today = new Date().toISOString().split('T')[0]
-
-      const { data: profile } = await (supabase.from('profiles') as any).select('id').limit(1).single()
-      const { data: driver } = await (supabase.from('drivers') as any).select('id').limit(1).single()
-
       const newRecord = {
-        advance_date: today,
+        advance_date: todayIST(),
         amount: amt,
-        staff_type: formData.staff_type === 'driver' ? 'driver' : 'labourer',
-        payment_method: formData.payment_method === 'bank_transfer' ? 'bank_transfer' : formData.payment_method === 'upi' ? 'upi' : 'cash',
-        payment_reference: formData.reference || `ADV-${Date.now()}`,
-        reason: formData.reason,
-        status: 'unapplied',
-        applied_amount: 0,
-        remaining_amount: amt,
-        driver_id: (driver as any)?.id || null,
-        recorded_by: (profile as any)?.id || null,
-      }
-
-      const { data } = await (supabase.from('staff_advances') as any).insert([newRecord]).select()
-
-      const newAdv = {
-        id: (data && (data as any)[0]?.id) || `adv-${Date.now()}`,
-        staff_name: formData.staff_name,
-        staff_type: formData.staff_type,
-        date: today,
-        amount: amt,
-        applied_amount: 0,
-        remaining_amount: amt,
+        staff_type: selectedPerson.staff_type,
         payment_method: formData.payment_method,
-        reason: formData.reason,
+        payment_reference: formData.reference.trim() || null,
+        reason: formData.reason.trim() || null,
         status: 'unapplied',
+        applied_amount: 0,
+        remaining_amount: amt,
+        driver_id: selectedPerson.kind === 'driver' ? selectedPerson.id : null,
+        staff_member_id: selectedPerson.kind === 'staff' ? selectedPerson.id : null,
+        recorded_by: user.id,
       }
-      setAdvances([newAdv, ...advances])
+
+      const { data, error } = await (supabase.from('staff_advances') as any)
+        .insert([newRecord])
+        .select('*, drivers(full_name), staff_members(full_name)')
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The advance was not saved. Please try again.')
+
+      setAdvances(prev => [toRow(data[0]), ...prev])
       toast({
         title: 'Advance Issued',
-        description: `₹${amt} recorded for ${formData.staff_name}. Added to unapplied balance.`,
+        description: `₹${amt.toLocaleString('en-IN')} recorded for ${selectedPerson.name}. Added to unapplied balance.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error recording advance',
-        description: err.message || 'Saved locally in memory.',
-        variant: 'default',
+        description: getErrorMessage(err, 'Failed to save to database'),
+        variant: 'error',
       })
-      setIsOpen(false)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -232,6 +264,8 @@ export default function StaffAdvancesPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Issue Staff Advance
@@ -265,6 +299,7 @@ export default function StaffAdvancesPage() {
       <DataTable
         columns={columns}
         data={advances}
+        loading={loading}
         searchColumn="staff_name"
         searchPlaceholder="Search staff member..."
       />
@@ -280,29 +315,31 @@ export default function StaffAdvancesPage() {
           <form onSubmit={handleCreate} className="space-y-3 pt-2">
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Staff Member *</Label>
-              <Input
-                required
-                placeholder="Ramesh Yadav"
-                value={formData.staff_name}
-                onChange={(e) => setFormData({ ...formData, staff_name: e.target.value })}
-              />
+              <Select
+                value={formData.person_key}
+                onValueChange={(val) => setFormData({ ...formData, person_key: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={people.length ? 'Select driver or staff member' : 'No drivers or staff registered'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {people.map(p => (
+                    <SelectItem key={p.key} value={p.key}>
+                      {p.name} ({p.staff_type.replace(/_/g, ' ')})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Role</Label>
-                <Select
-                  value={formData.staff_type}
-                  onValueChange={(val) => setFormData({ ...formData, staff_type: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="driver">Driver</SelectItem>
-                    <SelectItem value="labourer">Labourer</SelectItem>
-                    <SelectItem value="helper">Helper</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input
+                  readOnly
+                  disabled
+                  value={selectedPerson ? selectedPerson.staff_type.replace(/_/g, ' ') : '-'}
+                  className="capitalize"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Advance Amount (₹) *</Label>
@@ -315,7 +352,7 @@ export default function StaffAdvancesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Payment Mode</Label>
                 <Select
@@ -353,7 +390,7 @@ export default function StaffAdvancesPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Issue Advance
               </Button>
             </DialogFooter>

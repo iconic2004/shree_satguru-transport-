@@ -19,6 +19,9 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Users, Plus, Phone, MapPin } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([])
@@ -32,17 +35,15 @@ export default function CustomersPage() {
         .select('*, companies(name)')
         .order('name', { ascending: true })
 
-      if (data && data.length > 0) {
-        setCustomers(data.map((c: any) => ({
-          ...c,
-          company_name: c.companies?.name || 'Direct Client',
-        })))
-      } else {
-        setCustomers([])
-      }
+      if (error) throw error
+      setCustomers((data || []).map((c: any) => ({
+        ...c,
+        company_name: c.companies?.name || 'Direct Client',
+      })))
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load customers:', err)
       setCustomers([])
+      toast({ title: 'Could not load customers', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -63,45 +64,62 @@ export default function CustomersPage() {
     credit_limit: '0',
   })
 
+  const [submitting, setSubmitting] = useState(false)
+  const { can } = useUser()
+  const canManage = can('MANAGE_CUSTOMERS')
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const creditLimit = formData.credit_limit.trim() === '' ? 0 : parseAmount(formData.credit_limit)
+    if (!formData.name.trim()) {
+      toast({ title: 'Customer name is required', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(creditLimit) || creditLimit < 0) {
+      toast({ title: 'Invalid credit limit', description: 'Enter a number of 0 or more.', variant: 'error' })
+      return
+    }
+    if (formData.pin_code.trim() && !/^\d{6}$/.test(formData.pin_code.trim())) {
+      toast({ title: 'Invalid PIN code', description: 'PIN code must be 6 digits.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
       const newRecord = {
-        name: formData.name,
-        contact_person: formData.contact_person,
-        phone: formData.phone,
-        city: formData.city,
-        area: formData.area,
-        pin_code: formData.pin_code,
-        credit_limit: parseFloat(formData.credit_limit) || 0,
+        name: formData.name.trim(),
+        contact_person: formData.contact_person.trim() || null,
+        phone: formData.phone.trim() || null,
+        city: formData.city.trim() || null,
+        area: formData.area.trim() || null,
+        pin_code: formData.pin_code.trim() || null,
+        credit_limit: creditLimit,
         is_active: true,
       }
 
       const { data, error } = await (supabase.from('customers') as any).insert([newRecord]).select()
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The customer was not saved. Please try again.')
 
-      const createdCust = (data && data[0]) ? {
-        ...data[0],
-        company_name: 'Direct Customer',
-      } : {
-        id: `cust-${Date.now()}`,
-        ...newRecord,
-        company_name: 'Direct Customer',
-      }
-
-      setCustomers([createdCust, ...customers])
+      setCustomers(prev => [{ ...data[0], company_name: 'Direct Client' }, ...prev])
       toast({
         title: 'Customer Added',
-        description: `${formData.name} added to customer directory.`,
+        description: `${newRecord.name} added to customer directory.`,
         variant: 'success',
       })
+      setFormData({ name: '', contact_person: '', phone: '', city: '', area: '', pin_code: '', credit_limit: '0' })
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error adding customer',
-        description: err.message || 'Failed to save to database',
+        description: getErrorMessage(err, 'Failed to save to database'),
         variant: 'error',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -159,6 +177,8 @@ export default function CustomersPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Add Customer
@@ -169,6 +189,7 @@ export default function CustomersPage() {
       <DataTable
         columns={columns}
         data={customers}
+        loading={loading}
         searchColumn="name"
         searchPlaceholder="Search customer name or destination..."
       />
@@ -191,7 +212,7 @@ export default function CustomersPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Contact Person</Label>
                 <Input
@@ -209,7 +230,7 @@ export default function CustomersPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">City *</Label>
                 <Input
@@ -228,7 +249,7 @@ export default function CustomersPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">PIN Code</Label>
                 <Input
@@ -251,7 +272,7 @@ export default function CustomersPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Save Customer
               </Button>
             </DialogFooter>

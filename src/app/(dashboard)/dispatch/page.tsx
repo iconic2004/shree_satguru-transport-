@@ -29,7 +29,35 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Truck, Plus, MapPin, Printer, AlertTriangle, CheckCircle2, ArrowRight } from 'lucide-react'
 import { formatNumber, formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { capacityUtilization } from '@/lib/utils/finance'
+import { useUser } from '@/lib/hooks/use-user'
 import Link from 'next/link'
+
+function toRow(d: any) {
+  const stops = [...(d.dispatch_stops || [])]
+    .sort((a: any, b: any) => a.stop_sequence - b.stop_sequence)
+    .map((s: any) => s.city || s.delivery_address || `Stop ${s.stop_sequence}`)
+  const vehicleLabel = d.vehicles
+    ? `${d.vehicles.registration_number}${d.vehicles.make || d.vehicles.model ? ` (${`${d.vehicles.make || ''} ${d.vehicles.model || ''}`.trim()})` : ''}`
+    : '-'
+  return {
+    id: d.id,
+    dispatch_number: d.dispatch_number,
+    dispatch_date: d.dispatch_date,
+    vehicle_reg: vehicleLabel,
+    driver_name: d.drivers?.full_name || '-',
+    cargo_weight_kg: Number(d.cargo_weight_kg) || 0,
+    vehicle_capacity_kg: Number(d.vehicles?.cargo_capacity_kg) || 0,
+    capacity_utilization_pct: Number(d.capacity_utilization_pct) || 0,
+    planned_distance_km: Number(d.planned_distance_km) || 0,
+    planned_cost: Number(d.planned_cost) || 0,
+    stops_count: stops.length,
+    stops: stops.length ? stops : ['No stops recorded'],
+    status: d.status,
+  }
+}
 
 export default function DispatchPage() {
   const [dispatches, setDispatches] = useState<any[]>([])
@@ -38,33 +66,40 @@ export default function DispatchPage() {
   const loadDispatches = async () => {
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('dispatches')
-        .select('*, vehicles(registration_number, make, model, cargo_capacity_kg), drivers(full_name)')
-        .order('created_at', { ascending: false })
+      const [dspRes, vehRes, drvRes, goodsRes] = await Promise.all([
+        supabase
+          .from('dispatches')
+          .select('*, vehicles(registration_number, make, model, cargo_capacity_kg), drivers(full_name), dispatch_stops(stop_sequence, city, delivery_address)')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('vehicles')
+          .select('id, registration_number, cargo_capacity_kg, status')
+          .in('status', ['available', 'assigned'])
+          .order('registration_number'),
+        supabase.from('drivers').select('id, full_name').eq('employment_status', 'active').order('full_name'),
+        supabase
+          .from('goods_receipts')
+          .select('id, invoice_number, product_name, weight_kg, delivery_city')
+          .eq('status', 'available')
+          .order('created_at', { ascending: true })
+          .limit(12),
+      ])
 
-      if (data && data.length > 0) {
-        setDispatches(data.map((d: any) => ({
-          id: d.id,
-          dispatch_number: d.dispatch_number,
-          dispatch_date: d.dispatch_date,
-          vehicle_reg: d.vehicles ? `${d.vehicles.registration_number} (${d.vehicles.make || ''} ${d.vehicles.model || ''})`.trim() : 'Fleet Vehicle',
-          driver_name: d.drivers?.full_name || 'Driver',
-          cargo_weight_kg: d.cargo_weight_kg || 0,
-          vehicle_capacity_kg: d.vehicles?.cargo_capacity_kg || 0,
-          capacity_utilization_pct: d.capacity_utilization_pct || 0,
-          planned_distance_km: d.planned_distance_km || 0,
-          planned_cost: d.planned_cost || 0,
-          stops_count: 1,
-          stops: [d.origin || 'Origin Godown', d.destination || 'Destination'],
-          status: d.status || 'draft',
-        })))
-      } else {
-        setDispatches([])
-      }
+      if (dspRes.error) throw dspRes.error
+      setDispatches((dspRes.data || []).map(toRow))
+      setVehicleOptions(((vehRes.data as any[]) || []).map(v => ({ ...v, cargo_capacity_kg: Number(v.cargo_capacity_kg) || 0 })))
+      setDriverOptions((drvRes.data as any) || [])
+      setUnassignedGoods(((goodsRes.data as any[]) || []).map(g => ({
+        id: g.id,
+        invoice: g.invoice_number,
+        product: g.product_name,
+        weight: Number(g.weight_kg) || 0,
+        dest: g.delivery_city || '-',
+      })))
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load dispatches:', err)
       setDispatches([])
+      toast({ title: 'Could not load dispatches', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -75,72 +110,116 @@ export default function DispatchPage() {
   }, [])
 
   const [unassignedGoods, setUnassignedGoods] = useState<any[]>([])
+  const [vehicleOptions, setVehicleOptions] = useState<Array<{ id: string; registration_number: string; cargo_capacity_kg: number }>>([])
+  const [driverOptions, setDriverOptions] = useState<Array<{ id: string; full_name: string }>>([])
 
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const { user, can } = useUser()
+  const canManage = can('MANAGE_DISPATCH')
+  const emptyForm = {
     dispatch_number: '',
-    vehicle_reg: '',
-    driver_name: '',
+    vehicle_id: '',
+    driver_id: '',
     cargo_weight_kg: '',
     planned_distance_km: '',
     planned_cost: '',
     stops: '',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
+  const selectedVehicle = vehicleOptions.find(v => v.id === formData.vehicle_id)
+  const previewWeight = parseAmount(formData.cargo_weight_kg)
+  const previewUtil = selectedVehicle && !Number.isNaN(previewWeight)
+    ? capacityUtilization(previewWeight, selectedVehicle.cargo_capacity_kg)
+    : null
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      const supabase = createClient()
-      const weight = parseFloat(formData.cargo_weight_kg) || 0
-      const cap = 9500
-      const util = Math.round((weight / cap) * 100)
+    if (submitting) return
 
-      // Get valid vehicle and driver foreign keys from database
-      const [vehRes, drvRes] = await Promise.all([
-        supabase.from('vehicles').select('id, registration_number').limit(1),
-        supabase.from('drivers').select('id, full_name').limit(1),
-      ])
+    const weight = parseAmount(formData.cargo_weight_kg)
+    const distance = formData.planned_distance_km.trim() === '' ? 0 : parseAmount(formData.planned_distance_km)
+    const cost = formData.planned_cost.trim() === '' ? 0 : parseAmount(formData.planned_cost)
+    const driver = driverOptions.find(d => d.id === formData.driver_id)
+    const stops = formData.stops.split('->').map(s => s.trim()).filter(Boolean)
 
-      const vehicleId = (vehRes.data as any)?.[0]?.id || 'e0000001-0000-0000-0000-000000000001'
-      const driverId = (drvRes.data as any)?.[0]?.id || 'd0000001-0000-0000-0000-000000000001'
-
-      const newRecord: any = {
-        dispatch_number: formData.dispatch_number,
-        dispatch_date: new Date().toISOString().split('T')[0],
-        cargo_weight_kg: weight,
-        capacity_utilization_pct: util,
-        planned_distance_km: parseFloat(formData.planned_distance_km) || 0,
-        planned_cost: parseFloat(formData.planned_cost) || 0,
-        status: 'planned',
-        vehicle_id: vehicleId,
-        driver_id: driverId,
-      }
-
-      const { data, error } = await (supabase.from('dispatches') as any).insert([newRecord]).select()
-
-      const newDsp = {
-        id: (data && data[0]?.id) || `dsp-${Date.now()}`,
-        ...newRecord,
-        vehicle_reg: formData.vehicle_reg,
-        driver_name: formData.driver_name,
-        vehicle_capacity_kg: cap,
-        stops_count: 2,
-        stops: formData.stops.split('->').map(s => s.trim()),
-      }
-
-      setDispatches([newDsp, ...dispatches])
+    if (!formData.dispatch_number.trim()) {
+      toast({ title: 'Dispatch number is required', variant: 'error' })
+      return
+    }
+    if (!selectedVehicle || !driver) {
+      toast({ title: 'Select a vehicle and a driver', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(weight) || weight < 0 || Number.isNaN(distance) || distance < 0 || Number.isNaN(cost) || cost < 0) {
+      toast({ title: 'Invalid numbers', description: 'Weight, distance and cost must be 0 or more.', variant: 'error' })
+      return
+    }
+    const util = capacityUtilization(weight, selectedVehicle.cargo_capacity_kg)
+    if (util === null) {
+      toast({ title: 'Vehicle capacity unknown', description: 'Set the cargo capacity on the vehicle record first.', variant: 'error' })
+      return
+    }
+    if (util > 100) {
       toast({
-        title: 'Dispatch Plan Created',
-        description: `${formData.dispatch_number} assigned to ${formData.driver_name}. Trip sheet ready.`,
-        variant: 'success',
-      })
-      setIsOpen(false)
-    } catch (err: any) {
-      toast({
-        title: 'Error creating dispatch',
-        description: err.message || 'Failed to save dispatch plan',
+        title: 'Vehicle overloaded',
+        description: `${formatNumber(weight)} kg exceeds the ${formatNumber(selectedVehicle.cargo_capacity_kg)} kg capacity of ${selectedVehicle.registration_number}.`,
         variant: 'error',
       })
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const supabase = createClient()
+      const newRecord = {
+        dispatch_number: formData.dispatch_number.trim(),
+        dispatch_date: todayIST(),
+        cargo_weight_kg: weight,
+        capacity_utilization_pct: util,
+        planned_distance_km: distance,
+        planned_cost: cost,
+        status: 'planned',
+        vehicle_id: selectedVehicle.id,
+        driver_id: driver.id,
+        created_by: user?.id ?? null,
+      }
+
+      const { data, error } = await (supabase.from('dispatches') as any).insert([newRecord]).select('id')
+      if (error) {
+        if (error.code === '23505') throw new Error(`Dispatch number ${newRecord.dispatch_number} already exists.`)
+        throw error
+      }
+      const dispatchId = data?.[0]?.id
+      if (!dispatchId) throw new Error('The dispatch was not saved. Please try again.')
+
+      if (stops.length > 0) {
+        const { error: stopsError } = await (supabase.from('dispatch_stops') as any).insert(
+          stops.map((city, i) => ({ dispatch_id: dispatchId, stop_sequence: i + 1, city }))
+        )
+        if (stopsError) {
+          // Compensate so we never leave a half-created trip behind.
+          await (supabase.from('dispatches') as any).delete().eq('id', dispatchId)
+          throw stopsError
+        }
+      }
+
+      toast({
+        title: 'Dispatch Plan Created',
+        description: `${newRecord.dispatch_number} assigned to ${driver.full_name} on ${selectedVehicle.registration_number}.`,
+        variant: 'success',
+      })
+      setFormData(emptyForm)
+      setIsOpen(false)
+      await loadDispatches()
+    } catch (err) {
+      toast({
+        title: 'Error creating dispatch',
+        description: getErrorMessage(err, 'Failed to save dispatch plan'),
+        variant: 'error',
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -243,6 +322,8 @@ export default function DispatchPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Create Dispatch
@@ -280,6 +361,7 @@ export default function DispatchPage() {
       <DataTable
         columns={columns}
         data={dispatches}
+        loading={loading}
         searchColumn="dispatch_number"
         searchPlaceholder="Search dispatch ID or truck reg..."
       />
@@ -293,7 +375,7 @@ export default function DispatchPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3 pt-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Dispatch Number</Label>
                 <Input
@@ -303,24 +385,40 @@ export default function DispatchPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs font-semibold">Vehicle Registration *</Label>
-                <Input
-                  required
-                  placeholder="e.g. MH-04-AB-1234"
-                  value={formData.vehicle_reg}
-                  onChange={(e) => setFormData({ ...formData, vehicle_reg: e.target.value })}
-                />
+                <Label className="text-xs font-semibold">Vehicle *</Label>
+                <Select
+                  value={formData.vehicle_id}
+                  onValueChange={(val) => setFormData({ ...formData, vehicle_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={vehicleOptions.length ? 'Select vehicle' : 'No available vehicles'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vehicleOptions.map(v => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.registration_number} ({formatNumber(v.cargo_capacity_kg)} kg)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Assigned Driver *</Label>
-                <Input
-                  required
-                  placeholder="e.g. Driver Name"
-                  value={formData.driver_name}
-                  onChange={(e) => setFormData({ ...formData, driver_name: e.target.value })}
-                />
+                <Select
+                  value={formData.driver_id}
+                  onValueChange={(val) => setFormData({ ...formData, driver_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={driverOptions.length ? 'Select driver' : 'No active drivers'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {driverOptions.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Total Cargo Weight (KG)</Label>
@@ -333,6 +431,19 @@ export default function DispatchPage() {
                 />
               </div>
             </div>
+            {previewUtil !== null && (
+              <p
+                className={`text-[11px] font-semibold rounded border p-2 ${
+                  previewUtil > 100
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : previewUtil > 95
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                }`}
+              >
+                Capacity utilisation: {previewUtil}%{previewUtil > 100 ? ' — overloaded, reduce cargo or pick a larger vehicle' : ''}
+              </p>
+            )}
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Route Stops (Separate by &apos;-&gt;&apos;)</Label>
               <Input
@@ -341,7 +452,7 @@ export default function DispatchPage() {
                 onChange={(e) => setFormData({ ...formData, stops: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Planned Distance (KM)</Label>
                 <Input
@@ -365,7 +476,7 @@ export default function DispatchPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Generate Trip Sheet
               </Button>
             </DialogFooter>

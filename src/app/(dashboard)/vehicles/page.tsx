@@ -27,6 +27,17 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Truck, Plus, Gauge, AlertTriangle, ShieldCheck, Fuel } from 'lucide-react'
 import { formatNumber, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
+
+function toRow(v: any) {
+  return {
+    ...v,
+    make_model: `${v.make || ''} ${v.model || ''}`.trim() || '-',
+    assigned_driver: v.drivers?.full_name || 'Unassigned',
+  }
+}
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<any[]>([])
@@ -37,20 +48,15 @@ export default function VehiclesPage() {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('vehicles')
-        .select('*')
+        .select('*, drivers!vehicles_assigned_driver_id_fkey(full_name)')
         .order('created_at', { ascending: false })
 
-      if (data && data.length > 0) {
-        setVehicles(data.map((v: any) => ({
-          ...v,
-          make_model: `${v.make || ''} ${v.model || ''}`.trim() || 'Tata Motors',
-          assigned_driver: 'Assigned Driver',
-        })))
-      } else {
-        setVehicles([])
-      }
+      if (error) throw error
+      setVehicles((data || []).map(toRow))
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load vehicles:', err)
+      setVehicles([])
+      toast({ title: 'Could not load vehicles', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -61,66 +67,83 @@ export default function VehiclesPage() {
   }, [])
 
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const { can } = useUser()
+  const canManage = can('MANAGE_VEHICLES')
+  const emptyForm = {
     registration_number: '',
     vehicle_type: 'truck',
-    make_model: 'Tata Motors',
-    cargo_capacity_kg: '9000',
+    make_model: '',
+    cargo_capacity_kg: '',
     fuel_type: 'diesel',
-    current_odometer: '10000',
-    insurance_expiry: '2027-10-01',
-    fitness_expiry: '2027-10-01',
-    puc_expiry: '2027-04-01',
-  })
+    current_odometer: '',
+    insurance_expiry: '',
+    fitness_expiry: '',
+    puc_expiry: '',
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const registration = formData.registration_number.trim().toUpperCase()
+    const capacity = parseAmount(formData.cargo_capacity_kg)
+    const odometer = formData.current_odometer.trim() === '' ? 0 : parseAmount(formData.current_odometer)
+    if (!registration) {
+      toast({ title: 'Registration number is required', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(capacity) || capacity <= 0) {
+      toast({ title: 'Invalid capacity', description: 'Enter the cargo capacity in kg (greater than 0).', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(odometer) || odometer < 0) {
+      toast({ title: 'Invalid odometer reading', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
-      const parts = formData.make_model.split(' ')
-      const make = parts[0] || 'Tata'
-      const model = parts.slice(1).join(' ') || 'Motors'
+      const [make, ...modelParts] = formData.make_model.trim().split(/\s+/)
 
       const newRecord = {
-        registration_number: formData.registration_number,
+        registration_number: registration,
         vehicle_type: formData.vehicle_type as any,
-        make,
-        model,
-        cargo_capacity_kg: parseFloat(formData.cargo_capacity_kg) || 0,
+        make: make || null,
+        model: modelParts.join(' ') || null,
+        cargo_capacity_kg: capacity,
         fuel_type: formData.fuel_type as any,
-        current_odometer: parseFloat(formData.current_odometer) || 0,
-        insurance_expiry: formData.insurance_expiry,
-        fitness_expiry: formData.fitness_expiry,
-        puc_expiry: formData.puc_expiry,
+        current_odometer: odometer,
+        insurance_expiry: formData.insurance_expiry || null,
+        fitness_expiry: formData.fitness_expiry || null,
+        puc_expiry: formData.puc_expiry || null,
         status: 'available',
       }
 
-      const { data, error } = await (supabase.from('vehicles') as any).insert([newRecord]).select()
-      
-      const createdItem = (data && data[0]) ? {
-        ...data[0],
-        make_model: formData.make_model,
-        assigned_driver: 'Unassigned',
-      } : {
-        id: `v-${Date.now()}`,
-        ...newRecord,
-        make_model: formData.make_model,
-        assigned_driver: 'Unassigned',
-      }
+      const { data, error } = await (supabase.from('vehicles') as any)
+        .insert([newRecord])
+        .select('*, drivers!vehicles_assigned_driver_id_fkey(full_name)')
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The vehicle was not saved. Please try again.')
 
-      setVehicles([createdItem, ...vehicles])
+      setVehicles(prev => [toRow(data[0]), ...prev])
       toast({
         title: 'Vehicle Added',
-        description: `${formData.registration_number} added to fleet.`,
+        description: `${registration} added to fleet.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error adding vehicle',
-        description: err.message || 'Failed to save to database',
+        description: getErrorMessage(err, 'Failed to save to database'),
         variant: 'error',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -214,6 +237,8 @@ export default function VehiclesPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Add Vehicle
@@ -224,6 +249,7 @@ export default function VehiclesPage() {
       <DataTable
         columns={columns}
         data={vehicles}
+        loading={loading}
         searchColumn="registration_number"
         searchPlaceholder="Search vehicle registration no..."
       />
@@ -246,7 +272,7 @@ export default function VehiclesPage() {
                 onChange={(e) => setFormData({ ...formData, registration_number: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Vehicle Type</Label>
                 <Select
@@ -282,7 +308,7 @@ export default function VehiclesPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Make & Model</Label>
                 <Input
@@ -301,7 +327,7 @@ export default function VehiclesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Current Odometer (KM)</Label>
                 <Input
@@ -324,7 +350,7 @@ export default function VehiclesPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Register Vehicle
               </Button>
             </DialogFooter>

@@ -1,13 +1,20 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { Database } from '@/lib/types/database'
+import { requirePublicSupabaseConfig } from '@/lib/supabase/config'
 
+/**
+ * Server (route handler / server component) client acting AS THE SIGNED-IN USER.
+ * Uses the publishable key + the user's session cookie, so RLS applies. It must use
+ * the same URL as the browser client because the auth cookie name is derived from it.
+ */
 export function createClient() {
   const cookieStore = cookies()
+  const { url, publishableKey } = requirePublicSupabaseConfig()
 
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    publishableKey,
     {
       cookies: {
         getAll() {
@@ -27,16 +34,5 @@ export function createClient() {
   )
 }
 
-export async function createAdminClient() {
-  const { createClient } = await import('@supabase/supabase-js')
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    }
-  )
-}
+// The secret-key admin client lives in '@/lib/supabase/admin' (server-only, never
+// falls back to the publishable key).

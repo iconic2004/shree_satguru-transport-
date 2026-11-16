@@ -16,6 +16,7 @@ import {
   Globe,
   ChevronDown,
   Clock,
+  Menu,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,16 +31,20 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
   const { user, profile } = useUser()
   const [darkMode, setDarkMode] = useState(false)
   const [language, setLanguage] = useState<'en' | 'hi' | 'mr'>('en')
 
   const handleLogout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+    } finally {
+      // Always leave the protected area, even if the network call failed.
+      window.location.href = '/login'
+    }
   }
 
   const toggleDarkMode = () => {
@@ -60,9 +65,19 @@ export function Header() {
   const todayDate = formatDate(new Date())
 
   return (
-    <header className="h-16 border-b bg-white dark:bg-gray-950 flex items-center justify-between px-4 lg:px-6 z-20 shadow-sm">
+    <header className="h-16 border-b bg-white dark:bg-gray-950 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6 z-20 shadow-sm">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 lg:hidden flex-shrink-0"
+        onClick={onMenuClick}
+        aria-label="Open navigation"
+      >
+        <Menu className="w-5 h-5" />
+      </Button>
+
       {/* Search Input */}
-      <div className="flex items-center flex-1 max-w-md">
+      <div className="hidden sm:flex items-center flex-1 max-w-md">
         <div className="relative w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
@@ -73,7 +88,7 @@ export function Header() {
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 sm:gap-3 ml-auto">
         {/* Current Date & IST Badge */}
         <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-md text-xs font-medium text-gray-700 dark:text-gray-300">
           <Clock className="w-3.5 h-3.5 text-orange-500" />
@@ -105,7 +120,7 @@ export function Header() {
         </DropdownMenu>
 
         {/* Dark Mode Toggle */}
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-gray-500 hover:text-gray-900 dark:hover:text-white" onClick={toggleDarkMode}>
+        <Button variant="ghost" size="icon" className="h-9 w-9 text-gray-500 hover:text-gray-900 dark:hover:text-white" onClick={toggleDarkMode} aria-label="Toggle dark mode">
           {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </Button>
 
@@ -115,12 +130,13 @@ export function Header() {
           size="icon"
           className="relative h-9 w-9 text-gray-500 hover:text-gray-900 dark:hover:text-white"
           onClick={() => router.push('/notifications')}
+          aria-label="Notifications"
         >
           <Bell className="w-4 h-4" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
         </Button>
 
-        <div className="h-6 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
+        <div className="hidden sm:block h-6 w-px bg-gray-200 dark:bg-gray-800 mx-1" />
 
         {/* User Profile Dropdown */}
         <DropdownMenu>
@@ -129,15 +145,15 @@ export function Header() {
               <Avatar className="w-8 h-8 border border-navy-200 dark:border-navy-800">
                 <AvatarImage src={profile?.avatar_url || undefined} />
                 <AvatarFallback className="bg-navy-800 text-white text-xs font-bold">
-                  {getInitials(profile?.full_name || 'Admin User')}
+                  {getInitials(profile?.full_name)}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden md:flex flex-col items-start text-left">
                 <span className="text-xs font-semibold text-gray-900 dark:text-gray-100 leading-tight">
-                  {profile?.full_name || 'Admin Officer'}
+                  {profile?.full_name || user?.email || '…'}
                 </span>
                 <span className="text-[10px] text-orange-600 dark:text-orange-400 font-semibold leading-tight">
-                  {profile?.role ? ROLE_LABELS[profile.role] : 'Super Admin'}
+                  {profile?.role ? ROLE_LABELS[profile.role] : '—'}
                 </span>
               </div>
               <ChevronDown className="w-3.5 h-3.5 hidden md:block text-gray-400" />
@@ -146,10 +162,10 @@ export function Header() {
           <DropdownMenuContent align="end" className="w-60">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <span className="text-sm font-semibold">{profile?.full_name || 'Admin User'}</span>
-                <span className="text-xs text-gray-500 font-normal">{user?.email || 'admin@satgurutransport.com'}</span>
+                <span className="text-sm font-semibold">{profile?.full_name || '—'}</span>
+                <span className="text-xs text-gray-500 font-normal">{user?.email || ''}</span>
                 <Badge variant="outline" className="w-fit mt-1 text-[10px] bg-navy-50 text-navy-800 border-navy-200">
-                  {profile?.role ? ROLE_LABELS[profile.role] : 'Super Admin'}
+                  {profile?.role ? ROLE_LABELS[profile.role] : '—'}
                 </Badge>
               </div>
             </DropdownMenuLabel>

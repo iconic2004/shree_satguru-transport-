@@ -55,8 +55,9 @@ In the Supabase **Storage** section, create four public/authenticated buckets:
 2. Update with your real Supabase project credentials:
    ```env
    NEXT_PUBLIC_SUPABASE_URL=https://<your-project-id>.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-public-key>
-   SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_<your-publishable-key>
+   SUPABASE_SECRET_KEY=sb_secret_<your-secret-key>   # server only — never prefix with NEXT_PUBLIC_
+   # SUPABASE_URL=https://<project-ref>.supabase.co   # optional, admin client only
    NEXT_PUBLIC_APP_URL=http://localhost:3000
    NEXT_PUBLIC_TIMEZONE=Asia/Kolkata
    ```
@@ -87,8 +88,8 @@ The default route `/` will redirect you to the main `/dashboard`.
 2. In [Vercel](https://vercel.com), click **Add New Project** and select your repository.
 3. Configure the Environment Variables in Vercel:
    - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (sb_publishable_… key)
+   - `SUPABASE_SECRET_KEY` (sb_secret_… key — server only, never `NEXT_PUBLIC_`)
    - `NEXT_PUBLIC_APP_URL` (set to your Vercel production domain)
    - `NEXT_PUBLIC_TIMEZONE` (`Asia/Kolkata`)
 4. Click **Deploy**. Vercel will build and host the Next.js 14 App Router application with automatic SSL and edge CDN.

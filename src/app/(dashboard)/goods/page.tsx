@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { DataTable } from '@/components/shared/data-table'
@@ -24,6 +23,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST } from '@/lib/utils/validation'
+import { toCsv, downloadCsv } from '@/lib/utils/csv'
+import { useUser } from '@/lib/hooks/use-user'
 import { formatCurrency, formatDate, formatNumber } from '@/lib/utils/formatting'
 import { ColumnDef } from '@tanstack/react-table'
 import { Package, Plus, Download, Filter, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
@@ -51,31 +54,16 @@ export default function GoodsPage() {
   const loadGoods = async () => {
     try {
       setLoading(true)
-      // Try server API first
-      const res = await fetch('/api/goods')
-      if (res.ok) {
-        const json = await res.json()
-        if (json.success && Array.isArray(json.data)) {
-          setGoods(json.data)
-          return
-        }
+      const res = await fetch('/api/goods', { cache: 'no-store' })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success || !Array.isArray(json.data)) {
+        throw new Error(json?.error || `Request failed (${res.status})`)
       }
-
-      // Fallback to client Supabase
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('goods_receipts')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (data) {
-        setGoods(data)
-      } else {
-        setGoods([])
-      }
+      setGoods(json.data)
     } catch (err) {
       console.error('loadGoods error:', err)
       setGoods([])
+      toast({ title: 'Could not load goods register', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -88,12 +76,22 @@ export default function GoodsPage() {
   const handleCreateGoods = async (e?: React.FormEvent) => {
     if (e && e.preventDefault) e.preventDefault()
 
-    if (!formData.invoice_number.trim() || !formData.product_name.trim()) {
+    const quantity = parseAmount(formData.quantity)
+    const weight = parseAmount(formData.weight_kg)
+    if (!formData.invoice_number.trim() || !formData.product_name.trim() || !formData.delivery_city.trim()) {
       toast({
         title: 'Validation Missing',
-        description: 'Please enter both an Invoice Number and Product Name.',
+        description: 'Invoice number, product name and destination city are required.',
         variant: 'error',
       })
+      return
+    }
+    if (Number.isNaN(quantity) || quantity <= 0) {
+      toast({ title: 'Invalid quantity', description: 'Quantity must be greater than 0.', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(weight) || weight < 0) {
+      toast({ title: 'Invalid weight', description: 'Weight must be 0 or more.', variant: 'error' })
       return
     }
 
@@ -103,67 +101,29 @@ export default function GoodsPage() {
       invoice_number: formData.invoice_number.trim(),
       challan_number: formData.challan_number.trim() || null,
       consignor_name: formData.consignor_name.trim() || 'General Consignor',
-      consignee_name: formData.consignee_name.trim() || 'General Customer',
+      consignee_name: formData.consignee_name.trim() || null,
       product_name: formData.product_name.trim(),
-      product_category: formData.product_category || 'FMCG',
-      quantity: parseFloat(formData.quantity) || 1,
-      unit: formData.unit || 'cartons',
-      weight_kg: parseFloat(formData.weight_kg) || 0,
-      delivery_city: formData.delivery_city.trim() || 'Bhiwandi',
+      product_category: formData.product_category.trim() || 'General Cargo',
+      quantity,
+      unit: formData.unit.trim() || 'cartons',
+      weight_kg: weight,
+      delivery_city: formData.delivery_city.trim(),
       priority: formData.priority || 'normal',
-      handling_instructions: formData.handling_instructions || null,
-      status: 'verification_pending',
+      handling_instructions: formData.handling_instructions.trim() || null,
     }
 
     try {
-      let savedItem: any = null
-
-      // 1. Post to Server API (runs with full admin credentials & auto-creates company/customer)
-      try {
-        const res = await fetch('/api/goods', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        const json = await res.json()
-        if (json.success && json.data) {
-          savedItem = json.data
-        }
-      } catch (apiErr) {
-        console.warn('API post failed, falling back to direct Supabase:', apiErr)
+      const res = await fetch('/api/goods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.success || !json.data) {
+        throw new Error(json?.error || `Request failed (${res.status})`)
       }
 
-      // 2. Direct Supabase fallback if API wasn't available
-      if (!savedItem) {
-        try {
-          const supabase = createClient()
-          const { data: companies } = await supabase.from('companies').select('id').limit(1)
-          const companyId = (companies as any)?.[0]?.id || 'c0000001-0000-0000-0000-000000000001'
-
-          const { data } = await (supabase.from('goods_receipts') as any)
-            .insert([{ ...payload, consignor_company_id: companyId }])
-            .select()
-
-          if (data && data[0]) {
-            savedItem = {
-              ...data[0],
-              consignor_name: payload.consignor_name,
-              consignee_name: payload.consignee_name,
-            }
-          }
-        } catch (dbErr) {
-          console.warn('Direct Supabase insert fallback warning:', dbErr)
-        }
-      }
-
-      // 3. Optimistic local entry ensuring user always sees their record
-      const finalItem = savedItem || {
-        id: `gr-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        ...payload,
-      }
-
-      setGoods((prev) => [finalItem, ...prev.filter((g) => g.invoice_number !== payload.invoice_number)])
+      setGoods((prev) => [json.data, ...prev])
 
       toast({
         title: 'Goods Receipt Created',
@@ -187,18 +147,21 @@ export default function GoodsPage() {
         handling_instructions: '',
       })
       setIsCreateOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       console.error('handleCreateGoods error:', err)
+      // Keep the dialog open so the user can correct and retry without retyping.
       toast({
-        title: 'Notice',
-        description: err.message || 'Goods receipt registered.',
-        variant: 'default',
+        title: 'Goods receipt NOT saved',
+        description: getErrorMessage(err, 'Failed to save goods receipt'),
+        variant: 'error',
       })
-      setIsCreateOpen(false)
     } finally {
       setIsSubmitting(false)
     }
   }
+
+  const { can } = useUser()
+  const canManage = can('MANAGE_GOODS')
 
   const columns: ColumnDef<any>[] = [
     {
@@ -297,17 +260,16 @@ export default function GoodsPage() {
               variant="outline"
               size="sm"
               className="border-gray-300 text-xs"
+              disabled={goods.length === 0}
               onClick={() => {
-                const csvContent =
-                  'data:text/csv;charset=utf-8,Invoice,Product,Quantity,Weight,City,Status\n' +
-                  goods.map(g => `${g.invoice_number},"${g.product_name}",${g.quantity},${g.weight_kg},${g.delivery_city},${g.status}`).join('\n')
-                const encodedUri = encodeURI(csvContent)
-                const link = document.createElement('a')
-                link.setAttribute('href', encodedUri)
-                link.setAttribute('download', `goods_register_${new Date().toISOString().split('T')[0]}.csv`)
-                document.body.appendChild(link)
-                link.click()
-                document.body.removeChild(link)
+                const csv = toCsv(
+                  ['Invoice', 'Challan', 'Consignor', 'Consignee', 'Product', 'Quantity', 'Unit', 'Weight (kg)', 'City', 'Priority', 'Status', 'Received'],
+                  goods.map(g => [
+                    g.invoice_number, g.challan_number, g.consignor_name, g.consignee_name, g.product_name,
+                    Number(g.quantity), g.unit, Number(g.weight_kg), g.delivery_city, g.priority, g.status, formatDate(g.created_at),
+                  ])
+                )
+                downloadCsv(`goods_register_${todayIST()}.csv`, csv)
               }}
             >
               <Download className="w-3.5 h-3.5 mr-1.5" />
@@ -317,6 +279,8 @@ export default function GoodsPage() {
               size="sm"
               className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
               onClick={() => setIsCreateOpen(true)}
+              disabled={!canManage}
+              title={canManage ? undefined : 'You do not have permission to add goods receipts'}
             >
               <Plus className="w-4 h-4 mr-1.5" />
               New Goods Entry
@@ -328,6 +292,7 @@ export default function GoodsPage() {
       <DataTable
         columns={columns}
         data={goods}
+        loading={loading}
         searchColumn="invoice_number"
         searchPlaceholder="Search by invoice number or challan..."
         emptyTitle="No goods receipts recorded"
@@ -344,7 +309,7 @@ export default function GoodsPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateGoods} className="space-y-4 pt-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Invoice Number *</Label>
                 <Input
@@ -364,7 +329,7 @@ export default function GoodsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Consignor (Sender Company)</Label>
                 <Input
@@ -383,8 +348,8 @@ export default function GoodsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2 space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2 space-y-1">
                 <Label className="text-xs font-semibold">Product Name & Description *</Label>
                 <Input
                   required
@@ -403,7 +368,7 @@ export default function GoodsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Quantity *</Label>
                 <Input
@@ -434,7 +399,7 @@ export default function GoodsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Destination City *</Label>
                 <Input

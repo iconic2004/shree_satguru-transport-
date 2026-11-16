@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  X,
   Building2,
   UserCheck,
   Loader2,
@@ -105,12 +106,12 @@ const navigation: NavItem[] = [
     label: 'Staff & Labour',
     href: '/staff',
     icon: UserCog,
-    permission: 'VIEW_STAFF',
+    // No group permission: shown when the user can open at least one child.
     children: [
-      { label: 'All Staff', href: '/staff', icon: Users },
-      { label: 'Attendance', href: '/staff/attendance', icon: CalendarDays },
-      { label: 'Advances', href: '/staff/advances', icon: Wallet },
-      { label: 'Payroll & Settlements', href: '/staff/payroll', icon: DollarSign },
+      { label: 'All Staff', href: '/staff', icon: Users, permission: 'VIEW_STAFF' },
+      { label: 'Attendance', href: '/staff/attendance', icon: CalendarDays, permission: 'VIEW_ATTENDANCE' },
+      { label: 'Advances', href: '/staff/advances', icon: Wallet, permission: 'VIEW_ADVANCES' },
+      { label: 'Payroll & Settlements', href: '/staff/payroll', icon: DollarSign, permission: 'VIEW_PAYROLL' },
     ],
   },
   {
@@ -164,15 +165,19 @@ const navigation: NavItem[] = [
     label: 'Admin',
     href: '/admin/users',
     icon: ShieldCheck,
-    permission: 'VIEW_USERS',
     children: [
-      { label: 'User Roles', href: '/admin/users', icon: Users },
-      { label: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardList },
+      { label: 'User Roles', href: '/admin/users', icon: Users, permission: 'VIEW_USERS' },
+      { label: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardList, permission: 'VIEW_AUDIT_LOGS' },
     ],
   },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean
+  onMobileClose?: () => void
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['Warehouse', 'Staff & Labour'])
   const pathname = usePathname()
@@ -186,18 +191,34 @@ export function Sidebar() {
     )
   }
 
-  const filteredNav = navigation.filter(item => {
-    if (!item.permission) return true
-    if (!profile?.role) return true // Show all in local development/fallback
-    return hasPermission(profile.role, item.permission)
-  })
+  // Deny by default: until the profile has loaded only unrestricted items are shown.
+  const allowed = (permission?: Permission) =>
+    !permission || Boolean(profile?.role && profile.is_active && hasPermission(profile.role, permission))
+
+  const filteredNav = navigation
+    .filter(item => allowed(item.permission))
+    .map(item => (item.children ? { ...item, children: item.children.filter(c => allowed(c.permission)) } : item))
+    .filter(item => !item.children || item.children.length > 0)
+    // A group without its own permission links to its first visible child.
+    .map(item => (item.children && !item.permission ? { ...item, href: item.children[0].href } : item))
 
   return (
     <TooltipProvider delayDuration={0}>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          aria-hidden="true"
+          onClick={onMobileClose}
+        />
+      )}
       <aside
+        aria-label="Main navigation"
         className={cn(
-          'flex flex-col border-r bg-navy-950 text-white transition-all duration-300 z-30 select-none',
-          collapsed ? 'w-16' : 'w-64'
+          'flex flex-col border-r bg-navy-950 text-white transition-all duration-300 z-40 select-none',
+          // Mobile: off-canvas drawer. Desktop (lg+): static column.
+          'fixed inset-y-0 left-0 w-64 lg:static lg:translate-x-0',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          collapsed ? 'lg:w-16' : 'lg:w-64'
         )}
       >
         {/* Brand Header */}
@@ -222,12 +243,23 @@ export function Sidebar() {
               <Truck className="w-5 h-5 text-white" />
             </div>
           )}
+          <button
+            type="button"
+            className="lg:hidden p-1.5 rounded-md text-gray-300 hover:bg-navy-800 hover:text-white"
+            onClick={onMobileClose}
+            aria-label="Close navigation"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Navigation Links */}
         <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1 scrollbar-thin">
           {filteredNav.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+            const isActive =
+              pathname === item.href ||
+              (item.href !== '/dashboard' && pathname.startsWith(item.href)) ||
+              Boolean(item.children?.some(c => pathname === c.href.split('#')[0]))
             const hasChildren = item.children && item.children.length > 0
             const isExpanded = expandedGroups.includes(item.label)
             const Icon = item.icon
@@ -260,6 +292,8 @@ export function Sidebar() {
                 {hasChildren ? (
                   <>
                     <button
+                      type="button"
+                      aria-expanded={isExpanded}
                       onClick={() => toggleGroup(item.label)}
                       className={cn(
                         'flex items-center w-full gap-3 px-3 py-2 rounded-md text-sm transition-colors',
@@ -320,8 +354,8 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Collapse Toggle Footer */}
-        <div className="border-t border-navy-800 p-2">
+        {/* Collapse Toggle Footer (desktop only) */}
+        <div className="hidden lg:block border-t border-navy-800 p-2">
           <Button
             variant="ghost"
             size="sm"

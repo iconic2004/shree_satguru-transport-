@@ -28,6 +28,13 @@ import { ColumnDef } from '@tanstack/react-table'
 import { DollarSign, Plus, Fuel, Wrench, Shield, Home } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
+
+function toRow(e: any) {
+  return { ...e, vehicle_reg: e.vehicles?.registration_number || 'General / Godown' }
+}
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([])
@@ -36,21 +43,21 @@ export default function ExpensesPage() {
   const loadExpenses = async () => {
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*, vehicles(registration_number)')
-        .order('expense_date', { ascending: false })
+      const [expRes, vehRes] = await Promise.all([
+        supabase
+          .from('expenses')
+          .select('*, vehicles(registration_number)')
+          .order('expense_date', { ascending: false }),
+        supabase.from('vehicles').select('id, registration_number').order('registration_number'),
+      ])
 
-      if (data && data.length > 0) {
-        setExpenses(data.map((e: any) => ({
-          ...e,
-          vehicle_reg: e.vehicles?.registration_number || 'General Godown',
-        })))
-      } else {
-        setExpenses([])
-      }
+      if (expRes.error) throw expRes.error
+      setExpenses((expRes.data || []).map(toRow))
+      setVehicleOptions((vehRes.data as any) || [])
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load expenses:', err)
+      setExpenses([])
+      toast({ title: 'Could not load expenses', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -60,55 +67,71 @@ export default function ExpensesPage() {
     loadExpenses()
   }, [])
 
+  const [vehicleOptions, setVehicleOptions] = useState<Array<{ id: string; registration_number: string }>>([])
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const { user, can } = useUser()
+  const canManage = can('MANAGE_EXPENSES')
+  const emptyForm = {
     category: 'diesel_fuel',
-    amount: '4000',
-    payment_method: 'upi',
-    vendor: 'Bharat Petroleum',
-    vehicle_reg: 'MH-43-BP-8890',
-    description: 'Diesel top up',
-  })
+    amount: '',
+    payment_method: 'cash',
+    vendor: '',
+    vehicle_id: '',
+    description: '',
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const amt = parseAmount(formData.amount)
+    if (Number.isNaN(amt) || amt <= 0) {
+      toast({ title: 'Invalid amount', description: 'Enter an amount greater than 0.', variant: 'error' })
+      return
+    }
+    if (!user) {
+      toast({ title: 'Session expired', description: 'Please sign in again.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
-      const amt = parseFloat(formData.amount) || 0
       const newRecord = {
-        expense_date: new Date().toISOString().split('T')[0],
+        expense_date: todayIST(),
         category: formData.category as any,
         amount: amt,
         payment_method: formData.payment_method as any,
-        vendor: formData.vendor,
-        description: formData.description,
+        vendor: formData.vendor.trim() || null,
+        vehicle_id: formData.vehicle_id || null,
+        description: formData.description.trim() || null,
+        entered_by: user.id,
       }
 
-      const { data, error } = await (supabase.from('expenses') as any).insert([newRecord]).select()
+      const { data, error } = await (supabase.from('expenses') as any)
+        .insert([newRecord])
+        .select('*, vehicles(registration_number)')
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The expense was not saved. Please try again.')
 
-      const createdExp = (data && data[0]) ? {
-        ...data[0],
-        vehicle_reg: formData.vehicle_reg,
-      } : {
-        id: `exp-${Date.now()}`,
-        ...newRecord,
-        vehicle_reg: formData.vehicle_reg,
-      }
-
-      setExpenses([createdExp, ...expenses])
+      setExpenses(prev => [toRow(data[0]), ...prev])
       toast({
         title: 'Expense Logged',
-        description: `₹${amt} recorded under ${formData.category.replace('_', ' ')}.`,
+        description: `₹${amt.toLocaleString('en-IN')} recorded under ${formData.category.replace(/_/g, ' ')}.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
-        title: 'Notice',
-        description: err.message || 'Expense saved locally.',
-        variant: 'default',
+        title: 'Error saving expense',
+        description: getErrorMessage(err, 'Failed to save to database'),
+        variant: 'error',
       })
-      setIsOpen(false)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -119,7 +142,7 @@ export default function ExpensesPage() {
       cell: ({ row }) => (
         <div>
           <span className="font-bold text-navy-950 capitalize block">
-            {row.original.category.replace('_', ' ')}
+            {row.original.category.replace(/_/g, ' ')}
           </span>
           <span className="text-[11px] text-gray-500">{formatDate(row.original.expense_date)}</span>
         </div>
@@ -176,6 +199,8 @@ export default function ExpensesPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Record Expense
@@ -209,6 +234,7 @@ export default function ExpensesPage() {
       <DataTable
         columns={columns}
         data={expenses}
+        loading={loading}
         searchColumn="vendor"
         searchPlaceholder="Search vendor or category..."
       />
@@ -222,7 +248,7 @@ export default function ExpensesPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-3 pt-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Expense Category</Label>
                 <Select
@@ -253,7 +279,7 @@ export default function ExpensesPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Vendor / Pump Name</Label>
                 <Input
@@ -264,12 +290,39 @@ export default function ExpensesPage() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Related Vehicle</Label>
-                <Input
-                  placeholder="e.g. MH-04-AB-1234"
-                  value={formData.vehicle_reg}
-                  onChange={(e) => setFormData({ ...formData, vehicle_reg: e.target.value })}
-                />
+                <Select
+                  value={formData.vehicle_id || 'none'}
+                  onValueChange={(val) => setFormData({ ...formData, vehicle_id: val === 'none' ? '' : val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select vehicle" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">General / Godown (no vehicle)</SelectItem>
+                    {vehicleOptions.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.registration_number}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">Payment Method</Label>
+              <Select
+                value={formData.payment_method}
+                onValueChange={(val) => setFormData({ ...formData, payment_method: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="upi">UPI</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Description</Label>
@@ -283,7 +336,7 @@ export default function ExpensesPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Save Expense
               </Button>
             </DialogFooter>

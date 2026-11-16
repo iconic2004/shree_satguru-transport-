@@ -28,6 +28,21 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Receipt, Plus, Printer, CheckCircle, FileText, ArrowUpRight, DollarSign } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { computeInvoiceTotals, sumBy } from '@/lib/utils/finance'
+import { useUser } from '@/lib/hooks/use-user'
+
+interface CustomerOption {
+  id: string
+  name: string
+  gstin: string | null
+  company_id: string | null
+}
+
+function toRow(inv: any) {
+  return { ...inv, client_name: inv.customers?.name || inv.companies?.name || '-' }
+}
 
 export default function BillingPage() {
   const [invoices, setInvoices] = useState<any[]>([])
@@ -36,22 +51,25 @@ export default function BillingPage() {
   const loadInvoices = async () => {
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('invoices')
-        .select('*, customers(name), companies(name)')
-        .order('invoice_date', { ascending: false })
+      const [invRes, custRes] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('*, customers(name), companies(name)')
+          .order('invoice_date', { ascending: false }),
+        supabase
+          .from('customers')
+          .select('id, name, gstin, company_id')
+          .eq('is_active', true)
+          .order('name'),
+      ])
 
-      if (data && data.length > 0) {
-        setInvoices(data.map((inv: any) => ({
-          ...inv,
-          client_name: inv.companies?.name || inv.customers?.name || 'Client',
-        })))
-      } else {
-        setInvoices([])
-      }
+      if (invRes.error) throw invRes.error
+      setInvoices((invRes.data || []).map(toRow))
+      setCustomerOptions((custRes.data as any) || [])
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load invoices:', err)
       setInvoices([])
+      toast({ title: 'Could not load invoices', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -61,67 +79,90 @@ export default function BillingPage() {
     loadInvoices()
   }, [])
 
+  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([])
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const { user, can } = useUser()
+  const canManage = can('MANAGE_BILLING')
+  const emptyForm = {
     invoice_number: '',
-    client_name: '',
-    billing_month: '',
+    customer_id: '',
+    billing_month: todayIST().slice(0, 7),
     subtotal: '',
     tax_rate: '18',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
-    try {
-      const supabase = createClient()
-      const sub = parseFloat(formData.subtotal) || 0
-      const tax = sub * 0.18
-      const tds = sub * 0.02
-      const total = sub + tax
+    if (submitting) return
 
-      const today = new Date().toISOString().split('T')[0]
-      const due = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+    const customer = customerOptions.find(c => c.id === formData.customer_id)
+    const sub = parseAmount(formData.subtotal)
+    const rate = parseAmount(formData.tax_rate)
+    if (!formData.invoice_number.trim()) {
+      toast({ title: 'Invoice number is required', variant: 'error' })
+      return
+    }
+    if (!customer) {
+      toast({ title: 'Select a customer', description: 'Invoices must be billed to a registered customer.', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(sub) || sub <= 0) {
+      toast({ title: 'Invalid subtotal', description: 'Enter a freight amount greater than 0.', variant: 'error' })
+      return
+    }
+    if (!/^\d{4}-\d{2}$/.test(formData.billing_month)) {
+      toast({ title: 'Select the billing month', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const totals = computeInvoiceTotals(sub, rate)
+      const today = todayIST()
+      const supabase = createClient()
 
       const newRecord = {
-        invoice_number: formData.invoice_number,
+        invoice_number: formData.invoice_number.trim(),
+        customer_id: customer.id,
+        company_id: customer.company_id,
+        gst_number: customer.gstin,
         invoice_date: today,
-        due_date: due,
-        billing_month: today,
-        subtotal: sub,
-        tax_amount: tax,
-        tax_rate: 18,
-        tds_amount: tds,
-        total_amount: total,
+        due_date: addDays(today, 30),
+        billing_month: `${formData.billing_month}-01`,
+        ...totals,
         paid_amount: 0,
-        outstanding_amount: total,
+        outstanding_amount: totals.total_amount,
         status: 'draft',
+        created_by: user?.id ?? null,
       }
 
-      const { data, error } = await (supabase.from('invoices') as any).insert([newRecord]).select()
-
-      const createdInv = (data && data[0]) ? {
-        ...data[0],
-        client_name: formData.client_name,
-      } : {
-        id: `inv-${Date.now()}`,
-        ...newRecord,
-        client_name: formData.client_name,
+      const { data, error } = await (supabase.from('invoices') as any)
+        .insert([newRecord])
+        .select('*, customers(name), companies(name)')
+      if (error) {
+        if (error.code === '23505') throw new Error(`Invoice number ${newRecord.invoice_number} already exists.`)
+        throw error
       }
+      if (!data?.[0]) throw new Error('The invoice was not saved. Please try again.')
 
-      setInvoices([createdInv, ...invoices])
+      setInvoices(prev => [toRow(data[0]), ...prev])
       toast({
         title: 'Tax Invoice Generated',
-        description: `${formData.invoice_number} created with ₹${total.toLocaleString('en-IN')} total.`,
+        description: `${newRecord.invoice_number} created with ${formatCurrency(totals.total_amount)} total.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
-        title: 'Invoice Recorded',
-        description: 'Invoice registered locally.',
-        variant: 'default',
+        title: 'Error creating invoice',
+        description: getErrorMessage(err, 'Failed to save to database'),
+        variant: 'error',
       })
-      setIsOpen(false)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -148,13 +189,13 @@ export default function BillingPage() {
     },
     {
       accessorKey: 'subtotal',
-      header: 'Subtotal & GST (18%)',
+      header: 'Subtotal & GST',
       cell: ({ row }) => (
         <div>
           <span className="text-xs font-semibold text-gray-900 block">
             {formatCurrency(row.original.subtotal)}
           </span>
-          <span className="text-[11px] text-gray-500">GST: +{formatCurrency(row.original.tax_amount)}</span>
+          <span className="text-[11px] text-gray-500">GST {Number(row.original.tax_rate) || 0}%: +{formatCurrency(row.original.tax_amount)}</span>
         </div>
       ),
     },
@@ -211,9 +252,11 @@ export default function BillingPage() {
     },
   ]
 
-  const totalInvoiced = invoices.reduce((s, i) => s + i.total_amount, 0)
-  const totalReceived = invoices.reduce((s, i) => s + i.paid_amount, 0)
-  const totalReceivables = invoices.reduce((s, i) => s + i.outstanding_amount, 0)
+  // Cancelled / credited invoices are not revenue.
+  const activeInvoices = invoices.filter(i => i.status !== 'cancelled' && i.status !== 'credited')
+  const totalInvoiced = sumBy(activeInvoices, i => i.total_amount)
+  const totalReceived = sumBy(activeInvoices, i => i.paid_amount)
+  const totalReceivables = sumBy(activeInvoices, i => i.outstanding_amount)
 
   return (
     <div className="space-y-6">
@@ -225,6 +268,8 @@ export default function BillingPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Generate Monthly Invoice
@@ -258,6 +303,7 @@ export default function BillingPage() {
       <DataTable
         columns={columns}
         data={invoices}
+        loading={loading}
         searchColumn="invoice_number"
         searchPlaceholder="Search invoice no or client..."
       />
@@ -280,18 +326,27 @@ export default function BillingPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs font-semibold">Customer Corporation / Client Name</Label>
-              <Input
-                placeholder="Enter client or company name"
-                value={formData.client_name}
-                onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                required
-              />
+              <Label className="text-xs font-semibold">Customer *</Label>
+              <Select
+                value={formData.customer_id}
+                onValueChange={(val) => setFormData({ ...formData, customer_id: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={customerOptions.length ? 'Select customer' : 'No customers registered'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {customerOptions.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-semibold">Billing Month</Label>
+                <Label className="text-xs font-semibold">Billing Month *</Label>
                 <Input
+                  type="month"
+                  required
                   value={formData.billing_month}
                   onChange={(e) => setFormData({ ...formData, billing_month: e.target.value })}
                 />
@@ -307,14 +362,31 @@ export default function BillingPage() {
                 />
               </div>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">GST Rate</Label>
+              <Select
+                value={formData.tax_rate}
+                onValueChange={(val) => setFormData({ ...formData, tax_rate: val })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">0% (Exempt / RCM)</SelectItem>
+                  <SelectItem value="5">5%</SelectItem>
+                  <SelectItem value="12">12%</SelectItem>
+                  <SelectItem value="18">18%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <p className="text-[11px] text-gray-500 bg-gray-50 p-2 rounded border">
-              Includes automatic 18% CGST/SGST and 2% TDS computation.
+              GST is added at the selected rate. 2% TDS is recorded for reference (deducted by the customer at payment).
             </p>
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Generate Invoice
               </Button>
             </DialogFooter>

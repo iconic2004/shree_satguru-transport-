@@ -8,6 +8,10 @@
 --    invoices, payments, expenses, etc.)
 -- 2. PRESERVES your Admin login credentials (auth.users & public.profiles)
 -- 3. Sets up a clean Central Godown warehouse ready for real business cargo.
+--
+-- !!! DESTRUCTIVE: this TRUNCATEs every business table (goods, invoices,
+-- !!! payments, attendance, payroll ...). Take a database backup first and
+-- !!! never run it on a database that holds real business data.
 -- ==============================================================================
 
 -- 1. Truncate all transactional & operational tables with CASCADE
@@ -63,22 +67,26 @@ TRUNCATE TABLE
 CASCADE;
 
 -- 2. Insert a clean default Central Godown so inward cargo receipts can be recorded immediately
-INSERT INTO public.warehouses (id, name, code, address_line1, city, state, pin_code, is_active)
-VALUES 
-  ('a0000001-0000-0000-0000-000000000001', 'Central Godown Bhiwandi', 'BHW-01', 'Bhiwandi Logistics Hub', 'Bhiwandi', 'Maharashtra', '421302', true)
+-- (Column list fixed to match 00003_goods_warehouse.sql: the table has
+--  address/city/capacity_sqft, not address_line1/state/pin_code.)
+INSERT INTO public.warehouses (id, name, code, address, city, is_active)
+VALUES
+  ('a0000001-0000-0000-0000-000000000001', 'Central Godown Bhiwandi', 'BHW-01', 'Bhiwandi Logistics Hub, Maharashtra 421302', 'Bhiwandi', true)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.warehouse_locations (id, warehouse_id, name, code, is_active)
+-- (warehouse_locations has no "code" column; the bay code is kept in "section".)
+INSERT INTO public.warehouse_locations (id, warehouse_id, name, section, is_active)
 VALUES
   ('b0000001-0000-0000-0000-000000000001', 'a0000001-0000-0000-0000-000000000001', 'General Storage Bay A', 'BAY-A', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- 3. Log initial fresh start audit log
+-- (entity_id is a UUID column, so it is left NULL for this system event.)
 INSERT INTO public.audit_logs (action, entity_type, entity_id, new_values)
 VALUES (
   'SYSTEM_FRESH_START',
   'system',
-  'PRODUCTION_INIT',
-  '{"status": "cleaned", "mode": "production_ready", "timestamp": "' || NOW() || '"}'::jsonb
+  NULL,
+  jsonb_build_object('status', 'cleaned', 'mode', 'production_ready', 'timestamp', NOW())
 );
 

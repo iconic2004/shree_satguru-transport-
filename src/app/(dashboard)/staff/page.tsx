@@ -27,6 +27,9 @@ import { ColumnDef } from '@tanstack/react-table'
 import { Users, Plus, Phone, Wallet, CalendarDays } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
 import Link from 'next/link'
 
 export default function StaffPage() {
@@ -41,13 +44,12 @@ export default function StaffPage() {
         .select('*')
         .order('created_at', { ascending: false })
 
-      if (data && data.length > 0) {
-        setStaff(data)
-      } else {
-        setStaff([])
-      }
+      if (error) throw error
+      setStaff(data || [])
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load staff:', err)
+      setStaff([])
+      toast({ title: 'Could not load staff', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -66,40 +68,57 @@ export default function StaffPage() {
     payment_method_preference: 'cash',
   })
 
+  const [submitting, setSubmitting] = useState(false)
+  const { can } = useUser()
+  const canManage = can('MANAGE_STAFF')
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const wage = parseAmount(formData.daily_wage)
+    if (!formData.full_name.trim()) {
+      toast({ title: 'Full name is required', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(wage) || wage < 0) {
+      toast({ title: 'Invalid daily wage', description: 'Enter a number of 0 or more.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
       const newRecord = {
-        full_name: formData.full_name,
+        full_name: formData.full_name.trim(),
         staff_type: formData.staff_type as any,
-        phone: formData.phone,
-        daily_wage: parseFloat(formData.daily_wage) || 0,
+        phone: formData.phone.trim() || null,
+        daily_wage: wage,
         payment_method_preference: formData.payment_method_preference as any,
         employment_status: 'active',
-        joining_date: new Date().toISOString().split('T')[0],
+        joining_date: todayIST(),
       }
 
       const { data, error } = await (supabase.from('staff_members') as any).insert([newRecord]).select()
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The staff member was not saved. Please try again.')
 
-      const createdStaff = (data && data[0]) || {
-        id: `st-${Date.now()}`,
-        ...newRecord,
-      }
-
-      setStaff([createdStaff, ...staff])
+      setStaff(prev => [data[0], ...prev])
       toast({
         title: 'Staff Member Enrolled',
-        description: `${formData.full_name} added to staff roster.`,
+        description: `${newRecord.full_name} added to staff roster.`,
         variant: 'success',
       })
+      setFormData({ full_name: '', staff_type: 'labourer', phone: '', daily_wage: '650', payment_method_preference: 'cash' })
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error enrolling staff',
-        description: err.message || 'Failed to save to database',
+        description: getErrorMessage(err, 'Failed to save to database'),
         variant: 'error',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -179,13 +198,15 @@ export default function StaffPage() {
             <Button asChild variant="outline" size="sm" className="text-xs">
               <Link href="/staff/attendance">
                 <CalendarDays className="w-3.5 h-3.5 mr-1.5" />
-                Mark Today's Attendance
+                Mark Today&apos;s Attendance
               </Link>
             </Button>
             <Button
               size="sm"
               className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
               onClick={() => setIsOpen(true)}
+              disabled={!canManage}
+              title={canManage ? undefined : 'You do not have permission to add records here'}
             >
               <Plus className="w-4 h-4 mr-1.5" />
               Add Labourer / Helper
@@ -197,6 +218,7 @@ export default function StaffPage() {
       <DataTable
         columns={columns}
         data={staff}
+        loading={loading}
         searchColumn="full_name"
         searchPlaceholder="Search staff member name..."
       />
@@ -219,7 +241,7 @@ export default function StaffPage() {
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Staff Type</Label>
                 <Select
@@ -245,7 +267,7 @@ export default function StaffPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Daily Wage (₹) *</Label>
                 <Input
@@ -277,7 +299,7 @@ export default function StaffPage() {
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Enroll Staff
               </Button>
             </DialogFooter>

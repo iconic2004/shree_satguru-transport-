@@ -20,6 +20,8 @@ import {
 import { ColumnDef } from '@tanstack/react-table'
 import { CheckCircle2, AlertTriangle, MapPin, Camera, RotateCcw, FileCheck, Phone } from 'lucide-react'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { useUser } from '@/lib/hooks/use-user'
 import { formatNumber } from '@/lib/utils/formatting'
 
 export default function DeliveriesPage() {
@@ -34,24 +36,24 @@ export default function DeliveriesPage() {
         .select('*, customers(name), drivers(full_name), vehicles(registration_number), dispatches(dispatch_number), goods_receipts(product_name, quantity, unit)')
         .order('created_at', { ascending: false })
 
-      if (data && data.length > 0) {
-        setDeliveries(data.map((d: any) => ({
-          id: d.id,
-          dispatch_no: d.dispatches?.dispatch_number || 'DSP-2026-0041',
-          customer_name: d.customers?.name || 'Consignee',
-          destination: d.destination_address || 'Destination Hub',
-          driver_name: d.drivers?.full_name || 'Assigned Driver',
-          vehicle_reg: d.vehicles?.registration_number || 'Fleet Vehicle',
-          cargo: d.goods_receipts ? `${d.goods_receipts.product_name || 'Goods'} (${d.goods_receipts.quantity} ${d.goods_receipts.unit})` : 'Consignment Goods',
-          receiver_name: d.status === 'delivered' ? 'Store Manager' : '-',
-          status: d.status || 'in_transit',
-          pod_submitted: d.status === 'delivered',
-        })))
-      } else {
-        setDeliveries([])
-      }
+      if (error) throw error
+      setDeliveries((data || []).map((d: any) => ({
+        id: d.id,
+        goods_receipt_id: d.goods_receipt_id,
+        dispatch_no: d.dispatches?.dispatch_number || '-',
+        customer_name: d.customers?.name || '-',
+        destination: d.destination_address || d.destination_city || '-',
+        driver_name: d.drivers?.full_name || '-',
+        vehicle_reg: d.vehicles?.registration_number || '-',
+        cargo: d.goods_receipts ? `${d.goods_receipts.product_name || 'Goods'} (${d.goods_receipts.quantity} ${d.goods_receipts.unit || ''})`.trim() : '-',
+        receiver_name: d.receiver_name || '-',
+        status: d.status,
+        pod_submitted: d.status === 'delivered',
+      })))
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load deliveries:', err)
+      setDeliveries([])
+      toast({ title: 'Could not load deliveries', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -65,22 +67,63 @@ export default function DeliveriesPage() {
   const [receiverName, setReceiverName] = useState('')
   const [receiverPhone, setReceiverPhone] = useState('')
   const [podRemarks, setPodRemarks] = useState('')
+  const [savingPod, setSavingPod] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const { user, can } = useUser()
+  const canUpdate = can('UPDATE_DELIVERY')
 
   const handleMarkDelivered = async () => {
-    if (!selectedDel) return
+    if (!selectedDel || savingPod) return
+    if (!receiverName.trim()) {
+      toast({ title: 'Receiver name is required', description: 'Enter the name of the person who received the goods.', variant: 'error' })
+      return
+    }
+    if (receiverPhone.trim() && !/^[+\d][\d\s-]{6,}$/.test(receiverPhone.trim())) {
+      toast({ title: 'Invalid phone number', variant: 'error' })
+      return
+    }
+    if (!user) {
+      toast({ title: 'Session expired', description: 'Please sign in again.', variant: 'error' })
+      return
+    }
+
+    setSavingPod(true)
+    const supabase = createClient()
+    const previousStatus = selectedDel.status
     try {
-      const supabase = createClient()
-      await (supabase.from('deliveries') as any).update({ status: 'delivered' }).eq('id', selectedDel.id)
+      const now = new Date().toISOString()
+      const { data: updated, error: updateError } = await (supabase.from('deliveries') as any)
+        .update({
+          status: 'delivered',
+          receiver_name: receiverName.trim(),
+          delivery_remarks: podRemarks.trim() || null,
+          actual_arrival: now,
+        })
+        .eq('id', selectedDel.id)
+        .select('id')
+      if (updateError) throw updateError
+      if (!updated?.length) throw new Error('You do not have permission to update this delivery.')
+
+      const { error: podError } = await (supabase.from('proof_of_delivery') as any).insert([{
+        delivery_id: selectedDel.id,
+        receiver_name: receiverName.trim(),
+        receiver_phone: receiverPhone.trim() || null,
+        remarks: podRemarks.trim() || null,
+        captured_at: now,
+        captured_by: user.id,
+      }])
+      if (podError) {
+        // Roll the status back so a delivery is never "delivered" without its POD.
+        await (supabase.from('deliveries') as any)
+          .update({ status: previousStatus, receiver_name: null, actual_arrival: null })
+          .eq('id', selectedDel.id)
+        throw podError
+      }
 
       setDeliveries(prev =>
         prev.map(d =>
           d.id === selectedDel.id
-            ? {
-                ...d,
-                status: 'delivered',
-                receiver_name: receiverName || 'Store In-charge',
-                pod_submitted: true,
-              }
+            ? { ...d, status: 'delivered', receiver_name: receiverName.trim(), pod_submitted: true }
             : d
         )
       )
@@ -90,12 +133,46 @@ export default function DeliveriesPage() {
         variant: 'success',
       })
       setSelectedDel(null)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error updating delivery',
-        description: err.message || 'Could not update status',
+        description: getErrorMessage(err, 'Could not update status'),
         variant: 'error',
       })
+    } finally {
+      setSavingPod(false)
+    }
+  }
+
+  const handleReschedule = async (del: any) => {
+    setBusyId(del.id)
+    try {
+      const supabase = createClient()
+      const { data, error } = await (supabase.from('deliveries') as any)
+        .update({ status: 'rescheduled' })
+        .eq('id', del.id)
+        .select('id')
+      if (error) throw error
+      if (!data?.length) throw new Error('You do not have permission to update this delivery.')
+
+      // Release the consignment so it can be planned on another vehicle.
+      if (del.goods_receipt_id) {
+        const { error: goodsError } = await (supabase.from('goods_receipts') as any)
+          .update({ status: 'available' })
+          .eq('id', del.goods_receipt_id)
+        if (goodsError) throw goodsError
+      }
+
+      setDeliveries(prev => prev.map(d => (d.id === del.id ? { ...d, status: 'rescheduled' } : d)))
+      toast({
+        title: 'Rescheduled',
+        description: 'Consignment released back to available goods for the next dispatch.',
+        variant: 'success',
+      })
+    } catch (err) {
+      toast({ title: 'Could not reschedule', description: getErrorMessage(err), variant: 'error' })
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -161,6 +238,7 @@ export default function DeliveriesPage() {
           <Button
             size="sm"
             className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+            disabled={!canUpdate}
             onClick={() => {
               setSelectedDel(row.original)
               setReceiverName('')
@@ -175,21 +253,19 @@ export default function DeliveriesPage() {
           <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
             <FileCheck className="w-3.5 h-3.5" /> POD Confirmed
           </span>
-        ) : (
+        ) : row.original.status === 'failed' ? (
           <Button
             variant="outline"
             size="sm"
             className="h-7 text-xs text-rose-700 border-rose-300 hover:bg-rose-50"
-            onClick={() => {
-              toast({
-                title: 'Rescheduled',
-                description: 'Stop added back to available goods for next vehicle dispatch.',
-              })
-            }}
+            disabled={!canUpdate || busyId === row.original.id}
+            onClick={() => handleReschedule(row.original)}
           >
             <RotateCcw className="w-3.5 h-3.5 mr-1" />
             Reschedule
           </Button>
+        ) : (
+          <span className="text-xs text-gray-500 capitalize">{String(row.original.status).replace(/_/g, ' ')}</span>
         )
       ),
     },
@@ -240,6 +316,7 @@ export default function DeliveriesPage() {
       <DataTable
         columns={columns}
         data={deliveries}
+        loading={loading}
         searchColumn="customer_name"
         searchPlaceholder="Search consignee customer or stop..."
       />
@@ -281,17 +358,18 @@ export default function DeliveriesPage() {
             </div>
             <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center bg-gray-50">
               <Camera className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-              <p className="text-xs text-gray-600 font-medium">Capture or Upload Signed Challan Photo</p>
-              <p className="text-[10px] text-gray-400 mt-0.5">JPG, PNG or PDF under 10MB</p>
+              <p className="text-xs text-gray-600 font-medium">Signed challan photo upload is not available yet</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Keep the physical signed copy on file.</p>
             </div>
           </div>
           <DialogFooter className="pt-2">
-            <Button variant="outline" onClick={() => setSelectedDel(null)}>
+            <Button variant="outline" onClick={() => setSelectedDel(null)} disabled={savingPod}>
               Cancel
             </Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
               onClick={handleMarkDelivered}
+              disabled={savingPod}
             >
               Verify & Complete Delivery
             </Button>

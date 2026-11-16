@@ -7,6 +7,8 @@ import { DataTable } from '@/components/shared/data-table'
 import { ColumnDef } from '@tanstack/react-table'
 import { ShieldAlert, ShieldCheck, Clock, User, Filter, RefreshCw } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils/formatting'
+import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([])
@@ -22,25 +24,21 @@ export default function AuditLogsPage() {
         .order('created_at', { ascending: false })
         .limit(50)
 
-      if (data && data.length > 0) {
-        setLogs(
-          data.map((l: any) => ({
-            id: l.id,
-            action: l.action,
-            entity_type: l.entity_type,
-            entity_id: l.entity_id || 'REF-N/A',
-            user_name: l.profiles?.full_name || 'System / Admin',
-            description: l.new_values ? JSON.stringify(l.new_values).substring(0, 100) : `${l.action} on ${l.entity_type}`,
-            ip_address: l.ip_address || '127.0.0.1',
-            created_at: l.created_at,
-          }))
-        )
-      } else {
-        setLogs([])
-      }
+      if (error) throw error
+      setLogs((data || []).map((l: any) => ({
+        id: l.id,
+        action: l.action,
+        entity_type: l.entity_type,
+        entity_id: l.entity_id || '-',
+        user_name: l.profiles?.full_name || (l.user_id ? 'Unknown user' : 'System'),
+        description: l.new_values ? JSON.stringify(l.new_values).substring(0, 100) : `${l.action} on ${l.entity_type}`,
+        ip_address: l.ip_address || '-',
+        created_at: l.created_at,
+      })))
     } catch (err) {
       console.error('Failed to load audit logs:', err)
       setLogs([])
+      toast({ title: 'Could not load audit logs', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -103,6 +101,7 @@ export default function AuditLogsPage() {
       <DataTable
         columns={columns}
         data={logs}
+        loading={loading}
         searchColumn="action"
         searchPlaceholder="Filter audit action..."
       />

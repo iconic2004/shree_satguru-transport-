@@ -141,8 +141,9 @@ All SQL migration scripts are located in `supabase/migrations/`:
 Create `.env.local` in the project root:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_<your-publishable-key>
+SUPABASE_SECRET_KEY=sb_secret_<your-secret-key>   # server only — never prefix with NEXT_PUBLIC_
+# SUPABASE_URL=https://<project-ref>.supabase.co   # optional, admin client only
 
 NEXT_PUBLIC_APP_NAME="Shree Satguru Transport"
 NEXT_PUBLIC_APP_TIMEZONE="Asia/Kolkata"
@@ -194,6 +195,6 @@ For quick local testing, you can use the **Quick Demo Access** buttons on the `/
 3. Set the Framework Preset to **Next.js**.
 4. In **Environment Variables**, add:
    - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (sb_publishable_… key)
+   - `SUPABASE_SECRET_KEY` (sb_secret_… key — server only, never `NEXT_PUBLIC_`)
 5. Click **Deploy**.

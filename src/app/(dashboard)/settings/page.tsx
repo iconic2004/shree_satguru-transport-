@@ -1,6 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { validateNewPassword } from '@/lib/utils/validation'
+
+const COMPANY_SETTINGS_KEY = 'company_profile'
+const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const EDITABLE_FIELDS = ['name', 'headOffice', 'gstin', 'contactEmail', 'contactPhone'] as const
+
+function pickEditable(source: Record<string, unknown>): Partial<Record<(typeof EDITABLE_FIELDS)[number], string>> {
+  const out: Partial<Record<(typeof EDITABLE_FIELDS)[number], string>> = {}
+  for (const field of EDITABLE_FIELDS) {
+    if (typeof source[field] === 'string') out[field] = source[field] as string
+  }
+  return out
+}
 import { createClient } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/shared/page-header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -8,6 +21,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { useUser } from '@/lib/hooks/use-user'
 import { Building2, Lock, ShieldCheck, Database, Globe, Bell, Loader2 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -28,57 +43,106 @@ export default function SettingsPage() {
     confirmPassword: '',
   })
 
-  const handleSaveCompany = (e: React.FormEvent) => {
+  const { user, can } = useUser()
+  const canEditCompany = can('MANAGE_SETTINGS')
+  const [savingCompany, setSavingCompany] = useState(false)
+
+  // Load the persisted company profile (application_settings key/value store).
+  useEffect(() => {
+    const supabase = createClient()
+    ;(supabase.from('application_settings') as any)
+      .select('value')
+      .eq('key', COMPANY_SETTINGS_KEY)
+      .maybeSingle()
+      .then(({ data, error }: { data: { value: string } | null; error: unknown }) => {
+        if (error) {
+          console.error('Failed to load company settings:', error)
+          return
+        }
+        if (data?.value) {
+          try {
+            const saved = JSON.parse(data.value)
+            setCompanyDetails(prev => ({ ...prev, ...pickEditable(saved) }))
+          } catch {
+            console.error('Stored company settings are not valid JSON')
+          }
+        }
+      })
+  }, [])
+
+  const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault()
-    toast({
-      title: 'Company Settings Saved',
-      description: 'Logistics ERP configuration updated successfully.',
-      variant: 'success',
-    })
+    if (!canEditCompany || savingCompany) return
+    if (companyDetails.gstin && !GSTIN_PATTERN.test(companyDetails.gstin.trim().toUpperCase())) {
+      toast({ title: 'Invalid GSTIN', description: 'GSTIN must be 15 characters, e.g. 27AABCS9988A1Z0.', variant: 'error' })
+      return
+    }
+
+    setSavingCompany(true)
+    try {
+      const supabase = createClient()
+      const value = JSON.stringify(pickEditable({ ...companyDetails, gstin: companyDetails.gstin.trim().toUpperCase() }))
+      const { error } = await (supabase.from('application_settings') as any).upsert(
+        [{ key: COMPANY_SETTINGS_KEY, value, description: 'Company profile shown on invoices and challans' }],
+        { onConflict: 'key' }
+      )
+      if (error) throw error
+      toast({
+        title: 'Company Settings Saved',
+        description: 'Company profile updated.',
+        variant: 'success',
+      })
+    } catch (err) {
+      toast({ title: 'Could not save settings', description: getErrorMessage(err), variant: 'error' })
+    } finally {
+      setSavingCompany(false)
+    }
   }
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast({
-        title: 'Validation Error',
-        description: 'New password and confirm password do not match.',
-        variant: 'error',
-      })
+    const problem = validateNewPassword(passwordData.newPassword, passwordData.confirmPassword)
+    if (problem) {
+      toast({ title: 'Validation Error', description: problem, variant: 'error' })
       return
     }
-
-    if (passwordData.newPassword.length < 6) {
-      toast({
-        title: 'Password Too Short',
-        description: 'Password must be at least 6 characters long.',
-        variant: 'error',
-      })
+    if (passwordData.newPassword === passwordData.currentPassword) {
+      toast({ title: 'Validation Error', description: 'New password must be different from the current one.', variant: 'error' })
+      return
+    }
+    if (!user?.email) {
+      toast({ title: 'Session expired', description: 'Please sign in again.', variant: 'error' })
       return
     }
 
     try {
       setLoadingPass(true)
       const supabase = createClient()
+
+      // Re-authenticate: an unattended open session must not be enough to change the password.
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordData.currentPassword,
+      })
+      if (verifyError) throw new Error('Current password is incorrect.')
+
       const { error } = await supabase.auth.updateUser({
         password: passwordData.newPassword,
       })
-
       if (error) throw error
 
       toast({
         title: 'Password Updated',
-        description: 'Your administrative login credentials have been changed in Supabase.',
+        description: 'Your login password has been changed.',
         variant: 'success',
       })
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
-    } catch (err: any) {
+    } catch (err) {
       toast({
-        title: 'Update Notice',
-        description: err.message || 'Password updated for the current session.',
-        variant: 'default',
+        title: 'Password not changed',
+        description: getErrorMessage(err, 'Could not update password.'),
+        variant: 'error',
       })
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })
     } finally {
       setLoadingPass(false)
     }
@@ -104,12 +168,13 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="pt-4">
           <form onSubmit={handleSaveCompany} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Company Registered Name</Label>
                 <Input
                   value={companyDetails.name}
                   onChange={(e) => setCompanyDetails({ ...companyDetails, name: e.target.value })}
+                  disabled={!canEditCompany}
                 />
               </div>
               <div className="space-y-1">
@@ -117,6 +182,7 @@ export default function SettingsPage() {
                 <Input
                   value={companyDetails.gstin}
                   onChange={(e) => setCompanyDetails({ ...companyDetails, gstin: e.target.value })}
+                  disabled={!canEditCompany}
                 />
               </div>
             </div>
@@ -126,16 +192,18 @@ export default function SettingsPage() {
               <Input
                 value={companyDetails.headOffice}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, headOffice: e.target.value })}
+                disabled={!canEditCompany}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Official Contact Email</Label>
                 <Input
                   type="email"
                   value={companyDetails.contactEmail}
                   onChange={(e) => setCompanyDetails({ ...companyDetails, contactEmail: e.target.value })}
+                  disabled={!canEditCompany}
                 />
               </div>
               <div className="space-y-1">
@@ -143,11 +211,12 @@ export default function SettingsPage() {
                 <Input
                   value={companyDetails.contactPhone}
                   onChange={(e) => setCompanyDetails({ ...companyDetails, contactPhone: e.target.value })}
+                  disabled={!canEditCompany}
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Timezone</Label>
                 <Input value={companyDetails.timezone} disabled className="bg-gray-50 text-gray-500" />
@@ -159,8 +228,13 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs">
-                Save Company Details
+              <Button
+                type="submit"
+                disabled={!canEditCompany || savingCompany}
+                title={canEditCompany ? undefined : 'Only administrators can change company details'}
+                className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
+              >
+                {savingCompany ? 'Saving…' : 'Save Company Details'}
               </Button>
             </div>
           </form>
@@ -180,7 +254,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="pt-4">
           <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Current Password</Label>
                 <Input
@@ -214,8 +288,8 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button type="submit" variant="outline" className="text-xs font-semibold">
-                Change Password
+              <Button type="submit" variant="outline" className="text-xs font-semibold" disabled={loadingPass}>
+                {loadingPass ? 'Updating…' : 'Change Password'}
               </Button>
             </div>
           </form>
@@ -230,17 +304,17 @@ export default function SettingsPage() {
             <span>Supabase Cloud Integration Status</span>
           </CardTitle>
           <CardDescription className="text-xs">
-            Database connection and Row-Level-Security health check
+            Setup reference (static information — not a live health check)
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-4 space-y-3">
           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg text-xs">
             <div className="space-y-0.5">
               <p className="font-bold text-navy-950">PostgreSQL Migration Engine</p>
-              <p className="text-gray-500">10 Migration scripts prepared in /supabase/migrations</p>
+              <p className="text-gray-500">11 migration scripts in /supabase/migrations (00011 = security hardening)</p>
             </div>
-            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-md">
-              Ready
+            <span className="px-2.5 py-1 bg-slate-200 text-slate-700 font-bold rounded-md">
+              Info
             </span>
           </div>
 
@@ -249,8 +323,8 @@ export default function SettingsPage() {
               <p className="font-bold text-navy-950">Row Level Security (RLS)</p>
               <p className="text-gray-500">7 User roles enforced with PostgreSQL policies</p>
             </div>
-            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-md">
-              Active
+            <span className="px-2.5 py-1 bg-slate-200 text-slate-700 font-bold rounded-md">
+              Info
             </span>
           </div>
         </CardContent>

@@ -27,6 +27,9 @@ import { ColumnDef } from '@tanstack/react-table'
 import { UserCheck, Plus, Phone, Truck, ShieldAlert, Award, Calendar } from 'lucide-react'
 import { formatCurrency, formatDate } from '@/lib/utils/formatting'
 import { toast } from '@/lib/hooks/use-toast'
+import { getErrorMessage } from '@/lib/utils/errors'
+import { parseAmount, todayIST, addDays } from '@/lib/utils/validation'
+import { useUser } from '@/lib/hooks/use-user'
 import Link from 'next/link'
 
 interface DriverItem {
@@ -48,24 +51,29 @@ export default function DriversPage() {
   const [drivers, setDrivers] = useState<DriverItem[]>([])
   const [loading, setLoading] = useState(true)
 
+  const [vehicleOptions, setVehicleOptions] = useState<Array<{ id: string; registration_number: string }>>([])
+
   const loadDrivers = async () => {
     try {
       const supabase = createClient()
-      const { data, error } = await supabase
-        .from('drivers')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [driversRes, vehiclesRes] = await Promise.all([
+        supabase
+          .from('drivers')
+          .select('*, vehicles!fk_drivers_assigned_vehicle(registration_number)')
+          .order('created_at', { ascending: false }),
+        supabase.from('vehicles').select('id, registration_number').order('registration_number'),
+      ])
 
-      if (data && data.length > 0) {
-        setDrivers(data.map((d: any) => ({
-          ...d,
-          assigned_vehicle: 'Unassigned',
-        })))
-      } else {
-        setDrivers([])
-      }
+      if (driversRes.error) throw driversRes.error
+      setDrivers((driversRes.data || []).map((d: any) => ({
+        ...d,
+        assigned_vehicle: d.vehicles?.registration_number || '',
+      })))
+      setVehicleOptions((vehiclesRes.data as any) || [])
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load drivers:', err)
+      setDrivers([])
+      toast({ title: 'Could not load drivers', description: getErrorMessage(err), variant: 'error' })
     } finally {
       setLoading(false)
     }
@@ -76,59 +84,74 @@ export default function DriversPage() {
   }, [])
 
   const [isOpen, setIsOpen] = useState(false)
-  const [formData, setFormData] = useState({
+  const [submitting, setSubmitting] = useState(false)
+  const { can } = useUser()
+  const canManage = can('MANAGE_DRIVERS')
+  const emptyForm = {
     full_name: '',
     phone: '',
     licence_number: '',
     licence_class: 'Heavy Transport (HMV)',
-    licence_expiry: '2028-01-01',
+    licence_expiry: '',
     salary_type: 'monthly',
     rate_amount: '',
     assigned_vehicle: '',
-  })
+  }
+  const [formData, setFormData] = useState(emptyForm)
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (submitting) return
+
+    const rate = parseAmount(formData.rate_amount)
+    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.licence_number.trim()) {
+      toast({ title: 'Missing details', description: 'Name, phone and licence number are required.', variant: 'error' })
+      return
+    }
+    if (Number.isNaN(rate) || rate < 0) {
+      toast({ title: 'Invalid rate', description: 'Enter the salary / wage / trip rate as a number.', variant: 'error' })
+      return
+    }
+
+    setSubmitting(true)
     try {
       const supabase = createClient()
-      const rate = parseFloat(formData.rate_amount) || 0
       const newRecord = {
-        full_name: formData.full_name,
-        phone: formData.phone,
-        licence_number: formData.licence_number,
+        full_name: formData.full_name.trim(),
+        phone: formData.phone.trim(),
+        licence_number: formData.licence_number.trim().toUpperCase(),
         licence_class: formData.licence_class,
-        licence_expiry: formData.licence_expiry,
+        licence_expiry: formData.licence_expiry || null,
         salary_type: formData.salary_type,
         monthly_salary: formData.salary_type === 'monthly' ? rate : null,
         daily_wage: formData.salary_type === 'daily' ? rate : null,
         trip_rate: formData.salary_type === 'trip_based' ? rate : null,
         employment_status: 'active',
+        assigned_vehicle_id: formData.assigned_vehicle || null,
       }
 
-      const { data, error } = await (supabase.from('drivers') as any).insert([newRecord]).select()
+      const { data, error } = await (supabase.from('drivers') as any)
+        .insert([newRecord])
+        .select('*, vehicles!fk_drivers_assigned_vehicle(registration_number)')
+      if (error) throw error
+      if (!data?.[0]) throw new Error('The driver was not saved. Please try again.')
 
-      const createdDriver: DriverItem = (data && data[0]) ? {
-        ...data[0],
-        assigned_vehicle: formData.assigned_vehicle,
-      } : {
-        id: `d-${Date.now()}`,
-        ...newRecord,
-        assigned_vehicle: formData.assigned_vehicle,
-      }
-
-      setDrivers([createdDriver, ...drivers])
+      setDrivers(prev => [{ ...data[0], assigned_vehicle: data[0].vehicles?.registration_number || '' }, ...prev])
       toast({
         title: 'Driver Enrolled',
-        description: `${formData.full_name} registered successfully.`,
+        description: `${newRecord.full_name} registered successfully.`,
         variant: 'success',
       })
+      setFormData(emptyForm)
       setIsOpen(false)
-    } catch (err: any) {
+    } catch (err) {
       toast({
         title: 'Error adding driver',
-        description: err.message || 'Failed to save to database',
+        description: getErrorMessage(err, 'Failed to save to database'),
         variant: 'error',
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -222,6 +245,8 @@ export default function DriversPage() {
             size="sm"
             className="bg-navy-900 hover:bg-navy-950 text-white font-semibold text-xs"
             onClick={() => setIsOpen(true)}
+            disabled={!canManage}
+            title={canManage ? undefined : 'You do not have permission to add records here'}
           >
             <Plus className="w-4 h-4 mr-1.5" />
             Register Driver
@@ -232,6 +257,7 @@ export default function DriversPage() {
       <DataTable
         columns={columns}
         data={drivers}
+        loading={loading}
         searchColumn="full_name"
         searchPlaceholder="Search driver name or licence no..."
       />
@@ -254,7 +280,7 @@ export default function DriversPage() {
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Phone Number *</Label>
                 <Input
@@ -274,7 +300,7 @@ export default function DriversPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Licence Class</Label>
                 <Select
@@ -300,7 +326,7 @@ export default function DriversPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs font-semibold">Payment Structure</Label>
                 <Select
@@ -329,17 +355,26 @@ export default function DriversPage() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs font-semibold">Assigned Truck</Label>
-              <Input
-                placeholder="e.g. MH-04-AB-1234"
-                value={formData.assigned_vehicle}
-                onChange={(e) => setFormData({ ...formData, assigned_vehicle: e.target.value })}
-              />
+              <Select
+                value={formData.assigned_vehicle || 'none'}
+                onValueChange={(val) => setFormData({ ...formData, assigned_vehicle: val === 'none' ? '' : val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vehicle" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not assigned</SelectItem>
+                  {vehicleOptions.map(v => (
+                    <SelectItem key={v.id} value={v.id}>{v.registration_number}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" onClick={handleCreate} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
+              <Button type="submit" disabled={submitting} className="bg-navy-900 hover:bg-navy-950 text-white font-semibold">
                 Enroll Driver
               </Button>
             </DialogFooter>

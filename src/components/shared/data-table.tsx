@@ -28,6 +28,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Search,
+  Loader2,
 } from 'lucide-react'
 import { EmptyState } from './empty-state'
 
@@ -40,6 +41,8 @@ interface DataTableProps<TData, TValue> {
   emptyTitle?: string
   emptyDescription?: string
   emptyAction?: React.ReactNode
+  /** When true, a loading row is shown instead of the empty state. */
+  loading?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -51,6 +54,7 @@ export function DataTable<TData, TValue>({
   emptyTitle = 'No records found',
   emptyDescription,
   emptyAction,
+  loading = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -117,7 +121,14 @@ export function DataTable<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-48 text-center text-xs text-gray-500">
+                  <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-navy-700" />
+                  Loading records…
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id} className="hover:bg-slate-50 dark:hover:bg-gray-900/40">
                   {row.getVisibleCells().map((cell) => (
@@ -160,6 +171,7 @@ export function DataTable<TData, TValue>({
             variant="outline"
             size="icon"
             className="h-8 w-8"
+            aria-label="First page"
             onClick={() => table.setPageIndex(0)}
             disabled={!table.getCanPreviousPage()}
           >
@@ -169,6 +181,7 @@ export function DataTable<TData, TValue>({
             variant="outline"
             size="icon"
             className="h-8 w-8"
+            aria-label="Previous page"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
@@ -181,6 +194,7 @@ export function DataTable<TData, TValue>({
             variant="outline"
             size="icon"
             className="h-8 w-8"
+            aria-label="Next page"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
@@ -190,6 +204,7 @@ export function DataTable<TData, TValue>({
             variant="outline"
             size="icon"
             className="h-8 w-8"
+            aria-label="Last page"
             onClick={() => table.setPageIndex(table.getPageCount() - 1)}
             disabled={!table.getCanNextPage()}
           >
